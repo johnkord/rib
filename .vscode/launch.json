@@ -1,0 +1,35 @@
+{
+  "version": "0.2.0",
+  "compounds": [
+    {
+      "name": "Full-stack Dev",
+      "configurations": ["Debug API (Rust)", "Dev Frontend (React)"]
+    }
+  ],
+  "configurations": [
+    {
+      "name": "Debug API (Rust)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "--features", "inmem-store"],
+        "filter": { "kind": "bin", "name": "rib" }
+      },
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"],
+      "terminal": "integrated",
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "Dev Frontend (React)",
+      "type": "pwa-node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/rib-react",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--host"],
+      "autoAttachChildProcesses": true,
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}

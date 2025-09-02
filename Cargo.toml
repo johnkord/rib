@@ -1,0 +1,38 @@
+[package]
+name = "rib"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+actix-web = "4"
+actix-cors = "0.7"
+jsonwebtoken = "9"
+actix-web-httpauth = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+log = "0.4"
+utoipa = { version = "4", features = ["chrono"] }
+utoipa-swagger-ui = { version = "6", features = ["actix-web"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono"], optional = true }
+actix-multipart = "0.6"
+infer = "0.15"
+futures-util = "0.3"
+sha2 = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-actix-web = "0.7"
+reqwest = { version = "0.11", features = ["json"] }
+urlencoding = "2.1"
+
+[features]
+default = ["inmem-store"]
+inmem-store = []
+postgres-store = ["sqlx"]
+
+[dev-dependencies]
+actix-rt = "2"
+serde_json = "1"
+tempfile = "3"
+dotenv = "0.15"  # NEW - load .env files
