@@ -16,7 +16,7 @@ interface Thread {
   image_hash?: string;
   mime?: string | null;
 }
-type MediaItem = { hash: string; mime: string | null };
+type MediaItem = { hash: string; mime: string | null | undefined };
 
 export function ThreadPage() {
   const { id } = useParams();

@@ -1,0 +1,44 @@
+# Production overrides for docker-compose
+version: "3.9"
+
+services:
+  rib-backend:
+    environment:
+      # Production-specific environment
+      - RUST_LOG=${RUST_LOG:-warn}
+      - FRONTEND_URL=${FRONTEND_URL:-https://your-domain.com}
+    restart: always
+    # Remove port exposure in production (use reverse proxy)
+    ports: []
+    
+  rib-frontend:
+    restart: always
+    # Remove port exposure in production (use reverse proxy)  
+    ports: []
+    
+  postgres:
+    environment:
+      # Use secure passwords in production
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secure-production-password}
+    # Remove port exposure in production
+    ports: []
+    restart: always
+    
+  redis:
+    # Remove port exposure in production
+    ports: []
+    restart: always
+    
+  minio:
+    environment:
+      # Use secure credentials in production
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-admin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-secure-production-password}
+    # Remove port exposure in production
+    ports: []
+    restart: always
+    
+  mailhog:
+    # Disable mailhog in production or replace with real SMTP
+    deploy:
+      replicas: 0

@@ -18,7 +18,7 @@ export function BoardThreadsPage() {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [viewer, setViewer] = useState<{ hash: string; mime: string | null } | null>(null);
+  const [viewer, setViewer] = useState<{ hash: string; mime: string | null | undefined } | null>(null);
   const [editing, setEditing] = useState(false);
   const [newSlug, setNewSlug] = useState(board?.slug ?? '');
   const [newTitle, setNewTitle] = useState(board?.title ?? '');
