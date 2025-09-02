@@ -14,8 +14,29 @@ fmt:
 lint:
 	cargo clippy --all-targets --all-features -- -D warnings
 
-up:
+# Docker commands
+docker-validate:
+	@./validate-docker-setup.sh
+
+docker-up:
 	docker compose up -d
 
-down:
+docker-down:
+	docker compose down
+
+docker-down-volumes:
 	docker compose down -v
+
+docker-logs:
+	docker compose logs -f
+
+docker-status:
+	docker compose ps
+
+docker-dev:
+	@echo "Starting dependencies for local development..."
+	docker compose up -d postgres redis minio mailhog
+
+# Legacy aliases
+up: docker-up
+down: docker-down-volumes

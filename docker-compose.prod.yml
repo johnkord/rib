@@ -1,6 +1,4 @@
 # Production overrides for docker-compose
-version: "3.9"
-
 services:
   rib-backend:
     environment:

@@ -30,6 +30,8 @@ This guide explains how to run RIB using Docker and Docker Compose.
 3. **Start all services:**
    ```bash
    docker-compose up -d
+   # OR using the provided Makefile
+   make docker-up
    ```
 
 4. **Wait for services to be ready:**
@@ -84,6 +86,8 @@ For development with hot reload:
 1. **Start dependencies only:**
    ```bash
    docker-compose up -d postgres redis minio mailhog
+   # OR using the provided Makefile
+   make docker-dev
    ```
 
 2. **Run backend locally:**
