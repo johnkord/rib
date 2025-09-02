@@ -1,0 +1,51 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "cargo build",
+      "type": "shell",
+      "command": "cargo build",
+      "group": "build",
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "cargo run",
+      "type": "shell",
+      "command": "cargo run",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "cargo test",
+      "type": "shell",
+      "command": "cargo test",
+      "group": "test",
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "npm dev (react)",
+      "type": "npm",
+      "script": "dev",
+      "path": "rib-react",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "npm build (react)",
+      "type": "npm",
+      "script": "build",
+      "path": "rib-react",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "cargo build (rib)",
+      "type": "process",
+      "command": "cargo",
+      "args": ["build", "--bin", "rib"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": ["$rustc"],
+      "group": { "kind": "build", "isDefault": true }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "rib-dev",
+  "image": "mcr.microsoft.com/devcontainers/rust:1",
+  "postCreateCommand": "cargo fetch && cargo check",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "vadimcn.vscode-lldb"
+      ]
+    }
+  },
+  "mounts": [
+    "source=${localEnv:HOME}/.cargo/registry,target=/root/.cargo/registry,type=bind,consistency=cached",
+    "source=${localWorkspaceFolder}/target,target=/workspace/target,type=bind"
+  ]
+}
