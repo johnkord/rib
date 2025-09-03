@@ -83,10 +83,20 @@ pub async fn list_boards(data: web::Data<AppState>) -> Result<HttpResponse, ApiE
     request_body = NewBoard,
     responses(
         (status = 201, description = "Board created", body = Board),
+        (status = 403, description = "Forbidden – Admins only"),   // UPDATED
         (status = 409, description = "Conflict")
     )
 )]
-pub async fn create_board(data: web::Data<AppState>, payload: web::Json<NewBoard>) -> Result<HttpResponse, ApiError> {
+pub async fn create_board(
+    auth: Auth,                          // NEW – require JWT
+    data: web::Data<AppState>,
+    payload: web::Json<NewBoard>,
+) -> Result<HttpResponse, ApiError> {
+    // ── admin-only guard ───────────────────────────────────────────
+    if !auth.0.roles.iter().any(|r| matches!(r, Role::Admin)) {
+        return Err(ApiError::Forbidden);
+    }
+    // ───────────────────────────────────────────────────────────────
     let board = data.repo.create_board(payload.into_inner())?;
     Ok(HttpResponse::Created().json(board))
 }

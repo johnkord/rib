@@ -21,8 +21,11 @@ type MediaItem = { hash: string; mime: string | null };
 export function ThreadPage() {
   const { id } = useParams();
   const threadId = id ? Number(id) : null;
-  const thread = useQuery<Thread>({ queryKey: ['thread', threadId], queryFn: () => fetchJson(`/threads/${threadId}`) });
-  const { data: replies, isFetching } = useReplies(threadId);
+  const thread = useQuery<Thread>({
+    queryKey: ['thread', threadId],
+    queryFn: () => fetchJson(`/threads/${threadId}`)
+  });
+  const { data: replies, isFetching, refetch: refreshReplies } = useReplies(threadId); // ← UPDATED
   const createReply = useCreateReply();
   const [content, setContent] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -159,7 +162,19 @@ export function ThreadPage() {
             ></video>
           )
       )}
-      <h2 className="text-lg font-semibold mb-2">Replies</h2>
+      <h2 className="text-lg font-semibold mb-2 flex items-center"> {/* UPDATED */}
+        Replies
+        <button
+          className="btn btn-xs ml-2"
+          onClick={async () => {
+            await refreshReplies();   // update replies list
+            await thread.refetch();   // ALSO update bump_time / last-post meta
+          }}
+          disabled={isFetching}
+        >
+          {isFetching ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </h2>
       <form className="mb-4 space-y-2" onSubmit={onSubmit}>
         <textarea className="textarea textarea-bordered w-full" rows={3} placeholder="Reply..." value={content} onChange={(e)=>setContent(e.target.value)} />
         <input type="file" accept="image/*,video/*" onChange={onFileChange} />

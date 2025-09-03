@@ -1,8 +1,10 @@
 import { FormEvent, useState } from 'react';
 import { useBoards, useCreateBoard } from '../hooks/useBoards';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 
 export function BoardsPage() {
+  const { user } = useAuth();
   const { data, isFetching } = useBoards();
   const createBoard = useCreateBoard();
   const [slug, setSlug] = useState('');
@@ -26,12 +28,22 @@ export function BoardsPage() {
   return (
     <div>
       <h1 className="text-2xl mb-4">Boards</h1>
-      <form className="mb-6 space-y-2" onSubmit={onSubmit}>
-        <input className="input input-bordered w-full" placeholder="Slug" value={slug} onChange={(e)=>setSlug(e.target.value)} />
-        <input className="input input-bordered w-full" placeholder="Title" value={title} onChange={(e)=>setTitle(e.target.value)} />
-        {error && <p className="text-red-600 text-sm">{error}</p>}
-        <button className="btn btn-primary" disabled={submitting}>{submitting ? 'Creating…' : 'Create Board'}</button>
-      </form>
+
+      {/* Create-board form – Admins only ------------------------ */}
+      {user?.role === 'admin' ? (
+        <form className="mb-6 space-y-2" onSubmit={onSubmit}>
+          <input className="input input-bordered w-full" placeholder="Slug" value={slug} onChange={(e)=>setSlug(e.target.value)} />
+          <input className="input input-bordered w-full" placeholder="Title" value={title} onChange={(e)=>setTitle(e.target.value)} />
+          {error && <p className="text-red-600 text-sm">{error}</p>}
+          <button className="btn btn-primary" disabled={submitting}>{submitting ? 'Creating…' : 'Create Board'}</button>
+        </form>
+      ) : (
+        <p>
+        
+        </p>
+      )}
+      {/* -------------------------------------------------------- */}
+
       <ul>
         {isFetching && <li>Loading…</li>}
         {!isFetching && data?.map(b => (
