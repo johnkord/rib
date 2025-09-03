@@ -12,7 +12,7 @@
       "type": "lldb",
       "request": "launch",
       "cargo": {
-        "args": ["build", "--features", "inmem-store"],
+        "args": ["build", "--features", "postgres-store"],
         "filter": { "kind": "bin", "name": "rib" }
       },
       "cwd": "${workspaceFolder}",
@@ -30,6 +30,19 @@
       "autoAttachChildProcesses": true,
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**"]
+    },
+        {
+      "name": "Debug API (Rust) inmem",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "--features", "inmem-store"],
+        "filter": { "kind": "bin", "name": "rib" }
+      },
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"],
+      "terminal": "integrated",
+      "envFile": "${workspaceFolder}/.env"
     }
   ]
 }

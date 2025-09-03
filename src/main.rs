@@ -49,10 +49,22 @@ async fn main() -> std::io::Result<()> {
     info!("Frontend URL: {}", 
         std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:5173".to_string()));
 
-    #[cfg(feature = "inmem-store")]
+    #[cfg(all(feature = "inmem-store", not(feature = "postgres-store")))]
     let repo = InMemRepo::new();
-    #[cfg(feature = "inmem-store")]
+    #[cfg(all(feature = "inmem-store", not(feature = "postgres-store")))]
     info!("Using in-memory repository backend");
+
+    #[cfg(feature = "postgres-store")]
+    let repo = {
+        use sqlx::postgres::PgPoolOptions;
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for postgres-store");
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect_lazy(&db_url)
+            .expect("Failed to create Pg pool");
+        info!("Using Postgres repository backend");
+    crate::repo::pg::PgRepo::new(pool)
+    };
 
     let openapi = ApiDoc::openapi();
     info!("OpenAPI spec generated");
@@ -84,12 +96,10 @@ async fn main() -> std::io::Result<()> {
             .route("/mod/secret", web::get().to(moderator_only));
 
         // inject in-memory repository when the feature is enabled
-        #[cfg(feature = "inmem-store")]
-        {
-            app = app.app_data(actix_web::web::Data::new(AppState {
-                repo: Arc::new(repo.clone()),
-            }));
-        }
+        // Provide repo (either in-memory or Postgres)
+        app = app.app_data(actix_web::web::Data::new(AppState {
+            repo: Arc::new(repo.clone()),
+        }));
 
         app
     })

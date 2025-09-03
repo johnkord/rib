@@ -14,26 +14,32 @@ pub enum RepoError {
 
 pub type RepoResult<T> = Result<T, RepoError>;
 
+use async_trait::async_trait;
+
+#[async_trait]
 pub trait BoardRepo: Send + Sync {
-    fn list_boards(&self) -> RepoResult<Vec<Board>>;
-    fn create_board(&self, new: NewBoard) -> RepoResult<Board>;
-    fn update_board(&self, id: Id, upd: UpdateBoard) -> RepoResult<Board>;
+    async fn list_boards(&self) -> RepoResult<Vec<Board>>;
+    async fn create_board(&self, new: NewBoard) -> RepoResult<Board>;
+    async fn update_board(&self, id: Id, upd: UpdateBoard) -> RepoResult<Board>;
 }
 
+#[async_trait]
 pub trait ThreadRepo: Send + Sync {
-    fn list_threads(&self, board_id: Id) -> RepoResult<Vec<Thread>>;
-    fn create_thread(&self, new: NewThread) -> RepoResult<Thread>;
-    fn get_thread(&self, id: Id) -> RepoResult<Thread>;
+    async fn list_threads(&self, board_id: Id) -> RepoResult<Vec<Thread>>;
+    async fn create_thread(&self, new: NewThread) -> RepoResult<Thread>;
+    async fn get_thread(&self, id: Id) -> RepoResult<Thread>;
 }
 
+#[async_trait]
 pub trait ReplyRepo: Send + Sync {
-    fn list_replies(&self, thread_id: Id) -> RepoResult<Vec<Reply>>;
-    fn create_reply(&self, new: NewReply) -> RepoResult<Reply>;
+    async fn list_replies(&self, thread_id: Id) -> RepoResult<Vec<Reply>>;
+    async fn create_reply(&self, new: NewReply) -> RepoResult<Reply>;
 }
 
+#[async_trait]
 pub trait DiscordRoleRepo: Send + Sync {
-    fn get_discord_user_role(&self, discord_id: &str) -> Option<AuthRole>;
-    fn set_discord_user_role(&self, discord_id: &str, role: AuthRole) -> RepoResult<()>;
+    async fn get_discord_user_role(&self, discord_id: &str) -> Option<AuthRole>;
+    async fn set_discord_user_role(&self, discord_id: &str, role: AuthRole) -> RepoResult<()>;
 }
 
 pub trait Repo: BoardRepo + ThreadRepo + ReplyRepo + DiscordRoleRepo {}
@@ -135,12 +141,13 @@ pub mod inmem {
         fn default() -> Self { Self::new() }
     }
 
+    #[async_trait]
     impl BoardRepo for InMemRepo {
-        fn list_boards(&self) -> RepoResult<Vec<Board>> {
+        async fn list_boards(&self) -> RepoResult<Vec<Board>> {
             let s = self.state.read().unwrap();
             Ok(s.boards.values().cloned().collect())
         }
-        fn create_board(&self, new: NewBoard) -> RepoResult<Board> {
+        async fn create_board(&self, new: NewBoard) -> RepoResult<Board> {
             let mut s = self.state.write().unwrap();
             if s.boards.values().any(|b| b.slug == new.slug) {
                 return Err(RepoError::Conflict);
@@ -152,7 +159,7 @@ pub mod inmem {
             self.persist();                // NEW
             Ok(board)
         }
-        fn update_board(&self, id: Id, upd: UpdateBoard) -> RepoResult<Board> {  // NEW
+        async fn update_board(&self, id: Id, upd: UpdateBoard) -> RepoResult<Board> {  // NEW
             let mut s = self.state.write().unwrap();
 
             // ── 1. uniqueness check BEFORE mutable borrow ────────────
@@ -175,8 +182,9 @@ pub mod inmem {
         }
     }
 
+    #[async_trait]
     impl ThreadRepo for InMemRepo {
-        fn list_threads(&self, board_id: Id) -> RepoResult<Vec<Thread>> {
+        async fn list_threads(&self, board_id: Id) -> RepoResult<Vec<Thread>> {
             let s = self.state.read().unwrap();
             let mut v: Vec<_> = s.threads.values()
                 .filter(|t| t.board_id == board_id)
@@ -185,7 +193,7 @@ pub mod inmem {
             v.sort_by(|a, b| b.bump_time.cmp(&a.bump_time));        // NEW (latest first)
             Ok(v)
         }
-        fn create_thread(&self, new: NewThread) -> RepoResult<Thread> {
+        async fn create_thread(&self, new: NewThread) -> RepoResult<Thread> {
             let mut s = self.state.write().unwrap();
             if !s.boards.contains_key(&new.board_id) { return Err(RepoError::NotFound); }
             let now = Utc::now();                                   // NEW
@@ -211,14 +219,15 @@ pub mod inmem {
             self.persist();                // NEW
             Ok(thread)
         }
-        fn get_thread(&self, id: Id) -> RepoResult<Thread> {
+        async fn get_thread(&self, id: Id) -> RepoResult<Thread> {
             let s = self.state.read().unwrap();
             s.threads.get(&id).cloned().ok_or(RepoError::NotFound)
         }
     }
 
+    #[async_trait]
     impl ReplyRepo for InMemRepo {
-        fn list_replies(&self, thread_id: Id) -> RepoResult<Vec<Reply>> {
+        async fn list_replies(&self, thread_id: Id) -> RepoResult<Vec<Reply>> {
             let s = self.state.read().unwrap();
             let mut v: Vec<_> = s.replies
                 .values()
@@ -228,7 +237,7 @@ pub mod inmem {
             v.sort_by(|a, b| a.created_at.cmp(&b.created_at));    // ascending
             Ok(v)
         }
-        fn create_reply(&self, new: NewReply) -> RepoResult<Reply> {
+        async fn create_reply(&self, new: NewReply) -> RepoResult<Reply> {
             let mut s = self.state.write().unwrap();
             if !s.threads.contains_key(&new.thread_id) { return Err(RepoError::NotFound); }
             let id = Self::next_id(&mut s);
@@ -249,18 +258,173 @@ pub mod inmem {
         }
     }
 
+    #[async_trait]
     impl DiscordRoleRepo for InMemRepo {
-        fn get_discord_user_role(&self, discord_id: &str) -> Option<AuthRole> {
+        async fn get_discord_user_role(&self, discord_id: &str) -> Option<AuthRole> {
             let s = self.state.read().unwrap();
             s.discord_roles.get(discord_id).cloned()
         }
 
-        fn set_discord_user_role(&self, discord_id: &str, role: AuthRole) -> RepoResult<()> {
+        async fn set_discord_user_role(&self, discord_id: &str, role: AuthRole) -> RepoResult<()> {
             let mut s = self.state.write().unwrap();
             s.discord_roles.insert(discord_id.to_string(), role);
             drop(s);
             self.persist();
             Ok(())
         }
+    }
+}
+
+// Postgres implementation (feature = "postgres-store")
+#[cfg(feature = "postgres-store")]
+pub mod pg {
+    use super::*;
+    use sqlx::{Pool, Postgres};
+    use chrono::Utc;
+
+    #[derive(Clone)]
+    pub struct PgRepo { pool: Pool<Postgres> }
+
+    impl PgRepo {
+        pub fn new(pool: Pool<Postgres>) -> Self { Self { pool } }
+    }
+
+    #[async_trait]
+    impl BoardRepo for PgRepo {
+        async fn list_boards(&self) -> RepoResult<Vec<Board>> {
+            let recs = sqlx::query_as::<_, Board>("SELECT id, slug, title, created_at FROM boards ORDER BY id")
+                .fetch_all(&self.pool).await.map_err(|_| RepoError::NotFound)?; // simplify error mapping
+            Ok(recs)
+        }
+        async fn create_board(&self, new: NewBoard) -> RepoResult<Board> {
+            let rec = sqlx::query_as::<_, Board>("INSERT INTO boards (slug, title) VALUES ($1,$2) RETURNING id, slug, title, created_at")
+                .bind(&new.slug).bind(&new.title)
+                .fetch_one(&self.pool).await.map_err(|_| RepoError::Conflict)?;
+            Ok(rec)
+        }
+        async fn update_board(&self, id: Id, upd: UpdateBoard) -> RepoResult<Board> {
+            // Build dynamic SQL (simple field subset)
+            let mut slug = None; let mut title = None;
+            if let Some(s) = upd.slug { slug = Some(s); }
+            if let Some(t) = upd.title { title = Some(t); }
+            let rec = sqlx::query_as::<_, Board>(
+                "UPDATE boards SET slug = COALESCE($2, slug), title = COALESCE($3, title) WHERE id=$1 RETURNING id, slug, title, created_at"
+            )
+            .bind(id)
+            .bind(slug.as_ref())
+            .bind(title.as_ref())
+            .fetch_one(&self.pool).await.map_err(|_| RepoError::NotFound)?;
+            Ok(rec)
+        }
+    }
+
+    #[async_trait]
+    impl ThreadRepo for PgRepo {
+        async fn list_threads(&self, board_id: Id) -> RepoResult<Vec<Thread>> {
+            let recs = sqlx::query_as::<_, Thread>(r#"
+                SELECT t.id, t.board_id, t.subject, t.body, t.created_at, t.bump_time,
+                       img.hash as image_hash, img.mime as mime
+                FROM threads t
+                LEFT JOIN LATERAL (
+                   SELECT i.hash, i.mime FROM images i
+                   WHERE i.thread_id = t.id
+                   ORDER BY i.id ASC LIMIT 1
+                ) img ON TRUE
+                WHERE t.board_id = $1
+                ORDER BY t.bump_time DESC
+            "#)
+                .bind(board_id)
+                .fetch_all(&self.pool).await.map_err(|_| RepoError::NotFound)?;
+            Ok(recs)
+        }
+        async fn create_thread(&self, new: NewThread) -> RepoResult<Thread> {
+            let mut tx = self.pool.begin().await.map_err(|_| RepoError::Conflict)?;
+            let rec = sqlx::query!(
+                "INSERT INTO threads (board_id, subject, body) VALUES ($1,$2,$3) RETURNING id, board_id, subject, body, created_at, bump_time",
+                new.board_id, new.subject, new.body
+            ).fetch_one(&mut *tx).await.map_err(|_| RepoError::NotFound)?;
+            if let (Some(hash), Some(mime)) = (new.image_hash.as_ref(), new.mime.as_ref()) {
+                // Insert image row if it does not already exist; associate to thread
+                let _ = sqlx::query!(
+                    "INSERT INTO images (thread_id, reply_id, hash, mime) VALUES ($1,NULL,$2,$3) ON CONFLICT (hash) DO NOTHING",
+                    rec.id, hash, mime
+                ).execute(&mut *tx).await;
+            }
+            tx.commit().await.map_err(|_| RepoError::Conflict)?;
+            // Re-select with image join to populate struct
+            let thread = sqlx::query_as::<_, Thread>(r#"
+                SELECT t.id, t.board_id, t.subject, t.body, t.created_at, t.bump_time,
+                       img.hash as image_hash, img.mime as mime
+                FROM threads t
+                LEFT JOIN LATERAL (
+                   SELECT i.hash, i.mime FROM images i WHERE i.thread_id = t.id ORDER BY i.id ASC LIMIT 1
+                ) img ON TRUE
+                WHERE t.id = $1
+            "#).bind(rec.id).fetch_one(&self.pool).await.map_err(|_| RepoError::NotFound)?;
+            Ok(thread)
+        }
+        async fn get_thread(&self, id: Id) -> RepoResult<Thread> {
+            let thread = sqlx::query_as::<_, Thread>(r#"
+                SELECT t.id, t.board_id, t.subject, t.body, t.created_at, t.bump_time,
+                       img.hash as image_hash, img.mime as mime
+                FROM threads t
+                LEFT JOIN LATERAL (
+                   SELECT i.hash, i.mime FROM images i WHERE i.thread_id = t.id ORDER BY i.id ASC LIMIT 1
+                ) img ON TRUE
+                WHERE t.id = $1
+            "#).bind(id).fetch_one(&self.pool).await.map_err(|_| RepoError::NotFound)?;
+            Ok(thread)
+        }
+    }
+
+    #[async_trait]
+    impl ReplyRepo for PgRepo {
+        async fn list_replies(&self, thread_id: Id) -> RepoResult<Vec<Reply>> {
+            let recs = sqlx::query_as::<_, Reply>(r#"
+                SELECT r.id, r.thread_id, r.content, img.hash as image_hash, img.mime as mime, r.created_at
+                FROM replies r
+                LEFT JOIN LATERAL (
+                   SELECT i.hash, i.mime FROM images i WHERE i.reply_id = r.id ORDER BY i.id ASC LIMIT 1
+                ) img ON TRUE
+                WHERE r.thread_id = $1
+                ORDER BY r.created_at ASC
+            "#)
+                .bind(thread_id)
+                .fetch_all(&self.pool).await.map_err(|_| RepoError::NotFound)?;
+            Ok(recs)
+        }
+        async fn create_reply(&self, new: NewReply) -> RepoResult<Reply> {
+            let mut tx = self.pool.begin().await.map_err(|_| RepoError::Conflict)?;
+            let rec = sqlx::query!(
+                "INSERT INTO replies (thread_id, content) VALUES ($1,$2) RETURNING id, thread_id, content, created_at",
+                new.thread_id, new.content
+            ).fetch_one(&mut *tx).await.map_err(|_| RepoError::NotFound)?;
+            if let (Some(hash), Some(mime)) = (new.image_hash.as_ref(), new.mime.as_ref()) {
+                let _ = sqlx::query!(
+                    "INSERT INTO images (thread_id, reply_id, hash, mime) VALUES (NULL,$1,$2,$3) ON CONFLICT (hash) DO NOTHING",
+                    rec.id, hash, mime
+                ).execute(&mut *tx).await;
+            }
+            let _ = sqlx::query("UPDATE threads SET bump_time = now() WHERE id=$1")
+                .bind(new.thread_id)
+                .execute(&mut *tx).await;
+            tx.commit().await.map_err(|_| RepoError::Conflict)?;
+            // Re-select with image join
+            let reply = sqlx::query_as::<_, Reply>(r#"
+                SELECT r.id, r.thread_id, r.content, img.hash as image_hash, img.mime as mime, r.created_at
+                FROM replies r
+                LEFT JOIN LATERAL (
+                   SELECT i.hash, i.mime FROM images i WHERE i.reply_id = r.id ORDER BY i.id ASC LIMIT 1
+                ) img ON TRUE
+                WHERE r.id = $1
+            "#).bind(rec.id).fetch_one(&self.pool).await.map_err(|_| RepoError::NotFound)?;
+            Ok(reply)
+        }
+    }
+
+    #[async_trait]
+    impl DiscordRoleRepo for PgRepo {
+        async fn get_discord_user_role(&self, _discord_id: &str) -> Option<AuthRole> { None }
+        async fn set_discord_user_role(&self, _discord_id: &str, _role: AuthRole) -> RepoResult<()> { Ok(()) }
     }
 }

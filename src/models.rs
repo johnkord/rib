@@ -2,6 +2,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+// Use signed 64-bit when talking to Postgres (BIGINT maps to i64 in sqlx)
+#[cfg(feature = "postgres-store")]
+pub type Id = i64;
+#[cfg(not(feature = "postgres-store"))]
 pub type Id = u64;
 
 #[cfg_attr(feature = "postgres-store", derive(sqlx::FromRow))]

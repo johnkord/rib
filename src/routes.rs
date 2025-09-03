@@ -73,7 +73,7 @@ pub struct AppState { pub repo: Arc<dyn Repo> }
     )
 )]
 pub async fn list_boards(data: web::Data<AppState>) -> Result<HttpResponse, ApiError> {
-    let boards = data.repo.list_boards()?;
+    let boards = data.repo.list_boards().await?;
     Ok(HttpResponse::Ok().json(boards))
 }
 
@@ -97,7 +97,7 @@ pub async fn create_board(
         return Err(ApiError::Forbidden);
     }
     // ───────────────────────────────────────────────────────────────
-    let board = data.repo.create_board(payload.into_inner())?;
+    let board = data.repo.create_board(payload.into_inner()).await?;
     Ok(HttpResponse::Created().json(board))
 }
 
@@ -113,7 +113,7 @@ pub async fn create_board(
     )
 )]
 pub async fn list_threads(data: web::Data<AppState>, path: web::Path<Id>) -> Result<HttpResponse, ApiError> {
-    let mut threads = data.repo.list_threads(path.into_inner())?;
+    let mut threads = data.repo.list_threads(path.into_inner()).await?;
     threads.sort_by(|a, b| b.bump_time.cmp(&a.bump_time));      // NEW
     Ok(HttpResponse::Ok().json(threads))
 }
@@ -138,7 +138,7 @@ pub async fn create_thread(
         return Err(ApiError::Forbidden);
     }
     
-    let thread = data.repo.create_thread(payload.into_inner())?;
+    let thread = data.repo.create_thread(payload.into_inner()).await?;
     Ok(HttpResponse::Created().json(thread))
 }
 
@@ -152,7 +152,7 @@ pub async fn create_thread(
     )
 )]
 pub async fn get_thread(data: web::Data<AppState>, path: web::Path<Id>) -> Result<HttpResponse, ApiError> {
-    let th = data.repo.get_thread(path.into_inner()).map_err(|e| match e { crate::repo::RepoError::NotFound => ApiError::NotFound, _ => ApiError::Internal })?;
+    let th = data.repo.get_thread(path.into_inner()).await.map_err(|e| match e { crate::repo::RepoError::NotFound => ApiError::NotFound, _ => ApiError::Internal })?;
     Ok(HttpResponse::Ok().json(th))
 }
 
@@ -168,7 +168,7 @@ pub async fn get_thread(data: web::Data<AppState>, path: web::Path<Id>) -> Resul
     )
 )]
 pub async fn list_replies(data: web::Data<AppState>, path: web::Path<Id>) -> Result<HttpResponse, ApiError> {
-    let mut replies = data.repo.list_replies(path.into_inner())?;
+    let mut replies = data.repo.list_replies(path.into_inner()).await?;
     replies.sort_by(|a, b| a.created_at.cmp(&b.created_at));   // NEW
     Ok(HttpResponse::Ok().json(replies))
 }
@@ -193,7 +193,7 @@ pub async fn create_reply(
         return Err(ApiError::Forbidden);
     }
     
-    let reply = data.repo.create_reply(payload.into_inner())?;
+    let reply = data.repo.create_reply(payload.into_inner()).await?;
     Ok(HttpResponse::Created().json(reply))
 }
 
@@ -306,7 +306,7 @@ pub async fn update_board(
     }
     // ────────────────────────────────────────────────────────────────
     let board =
-        data.repo.update_board(path.into_inner(), payload.into_inner())?;
+        data.repo.update_board(path.into_inner(), payload.into_inner()).await?;
     Ok(HttpResponse::Ok().json(board))
 }
 // ---------------------------------------------------------------------
@@ -399,7 +399,7 @@ pub async fn discord_callback(
         .any(|s| s.trim() == user.id);
 
     let role = data.repo
-        .get_discord_user_role(&user.id)
+        .get_discord_user_role(&user.id).await
         .or_else(|| if is_bootstrap_admin { Some(crate::auth::Role::Admin) } else { None })
         .unwrap_or(crate::auth::Role::User);
 
@@ -458,7 +458,7 @@ pub async fn set_discord_role(
     };
     
     // Set the role in the repository
-    data.repo.set_discord_user_role(&payload.discord_id, role)?;
+    data.repo.set_discord_user_role(&payload.discord_id, role).await?;
     
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "message": "Role updated successfully",
