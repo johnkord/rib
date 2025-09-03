@@ -197,7 +197,7 @@ pub async fn create_reply(
     Ok(HttpResponse::Created().json(reply))
 }
 
-#[derive(serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
 pub struct ImageUploadResponse {
     pub hash: String,
     pub mime: String,
@@ -205,9 +205,14 @@ pub struct ImageUploadResponse {
 }
 
 const IMAGE_SIZE_LIMIT: usize = 10 * 1024 * 1024; // 10 MB
+// NEW – read base dir once
+fn image_base_dir() -> String {
+    std::env::var("RIB_DATA_DIR").unwrap_or_else(|_| "data".to_string())
+}
+
 const ALLOWED_MIME: &[&str] = &[
     "image/png", "image/jpeg", "image/gif", "image/webp",
-    "video/mp4", "video/webm"                // new
+    "video/mp4", "video/webm"
 ];
 
 #[utoipa::path(
@@ -246,22 +251,27 @@ pub async fn upload_image(mut payload: Multipart) -> Result<HttpResponse, ApiErr
         if !ALLOWED_MIME.contains(&mime.as_str()) {
             return Ok(HttpResponse::UnsupportedMediaType().finish());
         }
-        let dir = format!("data/images/{}/", &hash[0..2]);
+        let dir  = format!("{}/images/{}/", image_base_dir(), &hash[0..2]);
         let path = format!("{}{}", dir, hash);
-        if std::path::Path::new(&path).exists() {
-            // duplicate – respond with same payload instead of empty body
-            let resp = ImageUploadResponse {
-                hash,
-                mime: mime.clone(),          // already inferred above
-                size: bytes.len(),
-            };
-            return Ok(HttpResponse::Conflict().json(resp));
-        }
-        std::fs::create_dir_all(&dir).map_err(|e| { log::error!("mkdir error: {e}"); ApiError::Internal })?;
-        let mut f = std::fs::File::create(&path).map_err(|e| { log::error!("file create error: {e}"); ApiError::Internal })?;
-        f.write_all(&bytes).map_err(|e| { log::error!("file write error: {e}"); ApiError::Internal })?;
-        let resp = ImageUploadResponse { hash, mime, size: bytes.len() };
-        return Ok(HttpResponse::Created().json(resp));
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| { log::error!("mkdir error: {e}"); ApiError::Internal })?;
+
+        // create_new=true ⇒ AlreadyExists → 409
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    return ApiError::Conflict;
+                }
+                log::error!("file open error: {e}");
+                ApiError::Internal
+            })?;
+         f.write_all(&bytes)
+             .map_err(|e| { log::error!("file write error: {e}"); ApiError::Internal })?;
+         let resp = ImageUploadResponse { hash, mime, size: bytes.len() };
+         return Ok(HttpResponse::Created().json(resp));
     }
     Ok(HttpResponse::BadRequest().finish())
 }
@@ -269,10 +279,8 @@ pub async fn upload_image(mut payload: Multipart) -> Result<HttpResponse, ApiErr
 // NEW: serve stored image / video by hash
 pub async fn get_image(path: web::Path<String>) -> Result<HttpResponse, ApiError> {
     let hash = path.into_inner();
-    if hash.len() < 2 {
-        return Err(ApiError::NotFound);
-    }
-    let file_path = format!("data/images/{}/{}", &hash[0..2], hash);
+    if hash.len() < 2 { return Err(ApiError::NotFound); }
+    let file_path = format!("{}/images/{}/{}", image_base_dir(), &hash[0..2], hash);
     let bytes = std::fs::read(&file_path).map_err(|_| ApiError::NotFound)?;
     let mime = infer::get(&bytes)
         .map(|t| t.mime_type())
