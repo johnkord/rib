@@ -6,3 +6,12 @@ data
 .env
 .env.local
 .env.*.local
+
+# Frontend (rib-react) artefacts
+rib-react/dist
+rib-react/.vite
+rib-react/coverage
+rib-react/.eslintcache
+
+# npm debug logs
+npm-debug.log*
