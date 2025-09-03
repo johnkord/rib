@@ -216,39 +216,15 @@ Token bucket in Redis:
 ## 9. Development Workflow
 
 ### 9.1 Local Development
-
-**Option A: Full Docker setup**
-```bash
-# Start all services with Docker Compose
-docker-compose up -d
-
-# View logs
-docker-compose logs -f rib-backend
-```
-
-**Option B: Hybrid development** (recommended for active development)
-```bash
-# Start dependencies only
-docker-compose up -d postgres redis minio mailhog
-
-# Run backend locally with hot reload
-cargo watch -x "run --features inmem-store"
-
-# In another terminal, run frontend
-cd rib-react
-npm run dev
-```
-
-**Option C: Manual setup**
 ```bash
 # Start dependencies
 docker-compose up -d postgres redis minio
 
-# Run migrations (if using postgres-store)
+# Run migrations
 sqlx migrate run
 
-# Start dev server
-cargo run --features inmem-store
+# Start dev server with hot reload
+cargo watch -x run
 ```
 
 ### 9.2 Testing Strategy
@@ -453,32 +429,9 @@ Phase 3 (v1.0) – moderation UI, live updates via WS
 ### Prerequisites
 - Rust 1.75+
 - Node.js 18+ (for frontend)
-- Docker & Docker Compose (recommended for full setup)
+- Docker (optional, for dependencies)
 
-### Quick Start with Docker (Recommended)
-
-The fastest way to get RIB running with all dependencies:
-
-```bash
-git clone https://github.com/yourusername/rib.git
-cd rib
-
-# Set up environment
-cp .env.example .env
-# Edit .env and set JWT_SECRET to a secure value (32+ characters)
-
-# Start all services
-docker-compose up -d
-
-# Access the application
-# Frontend: http://localhost:3000
-# Backend API: http://localhost:8080
-# API Docs: http://localhost:8080/docs
-```
-
-See [Docker Deployment Guide](docs/DOCKER.md) for detailed instructions.
-
-### Manual Development Setup
+### Setup
 
 1. Clone the repository:
 ```bash

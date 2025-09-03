@@ -10,7 +10,7 @@ export function BoardThreadsPage() {
   const { data: boards } = useBoards();
   const board = useMemo(() => boards?.find(b => b.slug === slug), [boards, slug]);
   const boardId = board?.id ?? null;
-  const { data: threads, isFetching } = useThreads(boardId);
+  const { data: threads, isFetching, refetch: refreshThreads } = useThreads(boardId); // ← UPDATED (grab refetch)
   const createThread = useCreateThread();
   const updateBoard = useUpdateBoard();
   const [subject, setSubject] = useState('');
@@ -18,7 +18,7 @@ export function BoardThreadsPage() {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [viewer, setViewer] = useState<{ hash: string; mime: string | null | undefined } | null>(null);
+  const [viewer, setViewer] = useState<{ hash: string; mime: string | null } | null>(null);
   const [editing, setEditing] = useState(false);
   const [newSlug, setNewSlug] = useState(board?.slug ?? '');
   const [newTitle, setNewTitle] = useState(board?.title ?? '');
@@ -64,9 +64,18 @@ export function BoardThreadsPage() {
 
       {/* header row ------------------------------------------------ */}
       <div className="flex items-center justify-between mb-3">
-        <h1 className="text-xl font-semibold">
-          /{slug}/ – Threads
-        </h1>
+        <div className="flex items-center gap-2">              {/* NEW wrapper */}
+          <h1 className="text-xl font-semibold">
+            /{slug}/ – Threads
+          </h1>
+          <button                                   /* NEW */
+            className="btn btn-sm"
+            onClick={() => refreshThreads()}
+            disabled={isFetching}
+          >
+            {isFetching ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
         {board && !editing && (
           <button className="btn btn-sm" onClick={()=>{
             setNewSlug(board.slug);      // keep current values
@@ -77,6 +86,7 @@ export function BoardThreadsPage() {
           </button>
         )}
       </div>
+      {/* ----------------------------------------------------------- */}
 
       {/* inline edit form (appears under header) ------------------- */}
       {editing && board && (

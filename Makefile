@@ -37,6 +37,8 @@ docker-dev:
 	@echo "Starting dependencies for local development..."
 	docker compose up -d postgres redis minio mailhog
 
-# Legacy aliases
-up: docker-up
-down: docker-down-volumes
+up:
+	docker compose up -d
+
+down:
+	docker compose down -v
