@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rib
+  labels:
+    name: rib
+    app: rib

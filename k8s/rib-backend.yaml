@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rib-backend
+  namespace: rib
+  labels:
+    app: rib
+    component: backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: rib
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: rib
+        component: backend
+    spec:
+      containers:
+      - name: rib-backend
+        image: rib:latest
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: rib-config
+        - secretRef:
+            name: rib-secrets
+        volumeMounts:
+        - name: rib-data
+          mountPath: /app/data
+        livenessProbe:
+          httpGet:
+            path: /docs
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /docs
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: rib-data
+        persistentVolumeClaim:
+          claimName: rib-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rib-backend-service
+  namespace: rib
+  labels:
+    app: rib
+    component: backend
+spec:
+  selector:
+    app: rib
+    component: backend
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP

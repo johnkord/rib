@@ -268,11 +268,43 @@ FROM debian:bookworm-slim
 ```
 
 ### 10.2 Kubernetes Deployment
-- **Deployment**: 3+ replicas for HA
-- **Service**: LoadBalancer or NodePort
-- **ConfigMap**: Environment configuration
-- **Secret**: Database credentials, API keys
-- **HPA**: Auto-scaling based on metrics
+
+RIB includes comprehensive Kubernetes deployment manifests for production-ready deployments:
+
+```bash
+# Quick deployment
+./k8s/deploy.sh --build --registry your-registry.com --domain rib.yourdomain.com
+
+# Or step-by-step
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/storage.yaml
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/postgres.yaml
+kubectl apply -f k8s/redis.yaml
+kubectl apply -f k8s/minio.yaml
+kubectl apply -f k8s/rib-backend.yaml
+kubectl apply -f k8s/rib-frontend.yaml
+kubectl apply -f k8s/ingress.yaml
+kubectl apply -f k8s/hpa.yaml
+```
+
+**Components deployed:**
+- **Deployments**: Backend (3 replicas), Frontend (2 replicas), PostgreSQL, Redis, MinIO
+- **Services**: Internal networking between components
+- **Ingress**: Public web exposure with NGINX
+- **ConfigMaps/Secrets**: Environment configuration and sensitive data
+- **PersistentVolumes**: Data persistence for databases and object storage
+- **HPA**: Auto-scaling based on CPU/memory metrics
+
+**Features:**
+- High availability with multiple replicas
+- Auto-scaling based on resource usage
+- Health checks and rolling updates
+- Persistent storage for data
+- Public web exposure via Ingress
+- Comprehensive monitoring and logging support
+
+See `k8s/README.md` for detailed deployment instructions.
 
 ### 10.3 Environment Variables
 ```env
@@ -430,8 +462,9 @@ Phase 3 (v1.0) – moderation UI, live updates via WS
 - Rust 1.75+
 - Node.js 18+ (for frontend)
 - Docker (optional, for dependencies)
+- Kubernetes cluster (for production deployment)
 
-### Setup
+### Local Development
 
 1. Clone the repository:
 ```bash
@@ -482,6 +515,27 @@ cd rib-react
 npm install
 npm run dev
 ```
+
+### Production Deployment
+
+**Docker Compose (Recommended for testing):**
+```bash
+docker-compose up -d
+```
+
+**Kubernetes (Recommended for production):**
+```bash
+# Validate manifests
+./k8s/validate.sh
+
+# Deploy with auto-configuration
+./k8s/deploy.sh --build --registry your-registry.com --domain rib.yourdomain.com
+
+# Or deploy manually
+kubectl apply -f k8s/
+```
+
+See `k8s/README.md` for detailed Kubernetes deployment instructions.
 
 ### Environment Variables
 
