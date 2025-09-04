@@ -44,7 +44,6 @@ This guide explains how to run RIB using Docker and Docker Compose.
    - **Backend API**: http://localhost:8080
    - **API Documentation**: http://localhost:8080/docs
    - **MinIO Console**: http://localhost:9001 (admin/admin)
-   - **MailHog Web UI**: http://localhost:8025
 
 ## Services Overview
 
@@ -55,7 +54,6 @@ This guide explains how to run RIB using Docker and Docker Compose.
 | `postgres` | 5432 | PostgreSQL database |
 | `redis` | 6379 | Redis cache |
 | `minio` | 9000/9001 | S3-compatible object storage |
-| `mailhog` | 1025/8025 | Email testing |
 
 ## Environment Variables
 
@@ -85,7 +83,7 @@ For development with hot reload:
 
 1. **Start dependencies only:**
    ```bash
-   docker-compose up -d postgres redis minio mailhog
+   docker-compose up -d postgres redis minio
    # OR using the provided Makefile
    make docker-dev
    ```

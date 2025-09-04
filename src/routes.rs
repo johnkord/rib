@@ -321,17 +321,26 @@ pub async fn update_board(
 
 // Discord OAuth endpoints
 pub async fn discord_login() -> Result<HttpResponse, ApiError> {
-    let client_id = std::env::var("DISCORD_CLIENT_ID")
-        .map_err(|_| ApiError::Internal)?;
+    // Graceful degradation: return 503 JSON if Discord OAuth isn't configured
+    let client_id = match std::env::var("DISCORD_CLIENT_ID") {
+        Ok(v) => v,
+        Err(_) => {
+            return Ok(HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({
+                    "error": "discord_oauth_not_configured",
+                    "message": "Set DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET to enable Discord login"
+                })));
+        }
+    };
     let redirect_uri = std::env::var("DISCORD_REDIRECT_URI")
         .unwrap_or_else(|_| "http://localhost:8080/api/v1/auth/discord/callback".to_string());
-    
+
     let auth_url = format!(
         "https://discord.com/api/oauth2/authorize?client_id={}&redirect_uri={}&response_type=code&scope=identify",
         client_id,
         urlencoding::encode(&redirect_uri)
     );
-    
+
     Ok(HttpResponse::Found()
         .insert_header(("Location", auth_url))
         .finish())
@@ -363,10 +372,18 @@ pub async fn discord_callback(
 ) -> Result<HttpResponse, ApiError> {
     use actix_web::http::header;
     
-    let client_id = std::env::var("DISCORD_CLIENT_ID")
-        .map_err(|_| ApiError::Internal)?;
-    let client_secret = std::env::var("DISCORD_CLIENT_SECRET")
-        .map_err(|_| ApiError::Internal)?;
+    let client_id = match std::env::var("DISCORD_CLIENT_ID") { Ok(v) => v, Err(_) => {
+        return Ok(HttpResponse::ServiceUnavailable().json(serde_json::json!({
+            "error": "discord_oauth_not_configured",
+            "stage": "client_id"
+        })));
+    }};
+    let client_secret = match std::env::var("DISCORD_CLIENT_SECRET") { Ok(v) => v, Err(_) => {
+        return Ok(HttpResponse::ServiceUnavailable().json(serde_json::json!({
+            "error": "discord_oauth_not_configured",
+            "stage": "client_secret"
+        })));
+    }};
     let redirect_uri = std::env::var("DISCORD_REDIRECT_URI")
         .unwrap_or_else(|_| "http://localhost:8080/api/v1/auth/discord/callback".to_string());
     

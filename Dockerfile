@@ -1,5 +1,6 @@
 # Multi-stage Dockerfile for RIB Rust backend
-FROM rust:1.78 AS builder
+# Requires Rust >=1.82 due to ICU (unicode) crates pulled by dependencies
+FROM rust:1.83 AS builder
 
 # Install necessary system dependencies for building
 RUN apt-get update && apt-get install -y \

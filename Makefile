@@ -34,8 +34,8 @@ docker-status:
 	docker compose ps
 
 docker-dev:
-	@echo "Starting dependencies for local development..."
-	docker compose up -d postgres redis minio mailhog
+	@echo "Starting dependencies for local development (postgres, redis, minio)..."
+	docker compose up -d postgres redis minio
 
 up:
 	docker compose up -d

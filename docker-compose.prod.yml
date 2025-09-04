@@ -36,7 +36,3 @@ services:
     ports: []
     restart: always
     
-  mailhog:
-    # Disable mailhog in production or replace with real SMTP
-    deploy:
-      replicas: 0

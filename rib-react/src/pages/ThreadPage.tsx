@@ -97,8 +97,8 @@ export function ThreadPage() {
   // gather media in display order ------------------------------------
   const mediaItems = useMemo<MediaItem[]>(() => {
     const items: MediaItem[] = [];
-    if (thread.data?.image_hash) items.push({ hash: thread.data.image_hash, mime: thread.data.mime });
-    sortedReplies.forEach(r => { if (r.image_hash) items.push({ hash: r.image_hash, mime: r.mime }); });
+    if (thread.data?.image_hash) items.push({ hash: thread.data.image_hash, mime: thread.data.mime ?? null });
+    sortedReplies.forEach(r => { if (r.image_hash) items.push({ hash: r.image_hash, mime: r.mime ?? null }); });
     return items;
   }, [thread.data, sortedReplies]);
   // ------------------------------------------------------------------

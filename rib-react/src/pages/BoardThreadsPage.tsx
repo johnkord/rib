@@ -128,13 +128,13 @@ export function BoardThreadsPage() {
             <span className="ml-2 text-xs text-gray-500">
               (last {new Date(t.bump_time).toLocaleString()}, created {new Date(t.created_at).toLocaleString()})
             </span>
-            {t.image_hash && (
-              t.mime?.startsWith('image/')
-                ? <img className="inline-block h-6 ml-2 cursor-pointer" src={imageUrl(t.image_hash)} alt=""
-                        onClick={() => setViewer({ hash: t.image_hash!, mime: t.mime })} />
-                : <span className="ml-2 cursor-pointer"
-                        onClick={() => setViewer({ hash: t.image_hash!, mime: t.mime })}>📹</span>
-            )}
+      {t.image_hash && (
+        t.mime?.startsWith('image/')
+    ? <img className="inline-block h-6 ml-2 cursor-pointer" src={imageUrl(t.image_hash)} alt=""
+      onClick={() => setViewer({ hash: t.image_hash!, mime: t.mime ?? null })} />
+    : <span className="ml-2 cursor-pointer"
+      onClick={() => setViewer({ hash: t.image_hash!, mime: t.mime ?? null })}>📹</span>
+      )}
           </li>
         ))}
       </ul>

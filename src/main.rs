@@ -72,15 +72,22 @@ async fn main() -> std::io::Result<()> {
     let server = HttpServer::new(move || {
         // base application
         let cors = {
-            let c = Cors::default()
+            let mut c = Cors::default()
                 // during local dev allow React/Vite default ports
                 .allowed_origin("http://localhost:5173")
                 .allowed_origin("http://127.0.0.1:5173")
+                // containerized nginx frontend (served on 3000)
+                .allowed_origin("http://localhost:3000")
+                .allowed_origin("http://127.0.0.1:3000")
                 // allow Swagger UI if served from same origin (actix itself)
                 .allow_any_header()
                 .allowed_methods(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) // adjust as needed
                 .supports_credentials()
                 .max_age(3600);
+            // If FRONTEND_URL env var is provided and not already covered, add it.
+            if let Ok(front) = std::env::var("FRONTEND_URL") {
+                c = c.allowed_origin(&front);
+            }
             // Accept Authorization & Content-Type explicitly when not using allow_any_header
             // c = c.allowed_headers(vec![header::CONTENT_TYPE, header::AUTHORIZATION]);
             c
@@ -103,9 +110,9 @@ async fn main() -> std::io::Result<()> {
 
         app
     })
-    .bind(("127.0.0.1", 8080))?;           // <-- keep result in a variable
+    .bind(("0.0.0.0", 8080))?;           // listen on all interfaces so nginx container can reach it
 
-    info!("Listening on http://127.0.0.1:8080");
+    info!("Listening on http://0.0.0.0:8080 (all interfaces)");
 
     server.run().await                     // <-- run the server
 }
