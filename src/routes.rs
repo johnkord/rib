@@ -3,11 +3,11 @@ use actix_web::{web, HttpResponse};
 use actix_multipart::Multipart;
 use futures_util::TryStreamExt as _;
 use sha2::{Sha256, Digest};
-use std::io::Write;
 
 use crate::error::ApiError;
 use crate::models::*;
 use crate::repo::Repo;
+use crate::storage::{ImageStore, ImageStoreError};
 use crate::auth::{Auth, Role};
 
 pub fn config(cfg: &mut web::ServiceConfig) {
@@ -63,7 +63,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 }
 
 #[derive(Clone)]
-pub struct AppState { pub repo: Arc<dyn Repo> }
+pub struct AppState { pub repo: Arc<dyn Repo>, pub image_store: Arc<dyn ImageStore> }
 
 #[utoipa::path(
     get,
@@ -205,10 +205,6 @@ pub struct ImageUploadResponse {
 }
 
 const IMAGE_SIZE_LIMIT: usize = 10 * 1024 * 1024; // 10 MB
-// NEW – read base dir once
-fn image_base_dir() -> String {
-    std::env::var("RIB_DATA_DIR").unwrap_or_else(|_| "data".to_string())
-}
 
 const ALLOWED_MIME: &[&str] = &[
     "image/png", "image/jpeg", "image/gif", "image/webp",
@@ -225,7 +221,7 @@ const ALLOWED_MIME: &[&str] = &[
         (status = 413, description = "Payload too large"),
     )
 )]
-pub async fn upload_image(mut payload: Multipart) -> Result<HttpResponse, ApiError> {
+pub async fn upload_image(data: web::Data<AppState>, mut payload: Multipart) -> Result<HttpResponse, ApiError> {
     use actix_web::http::StatusCode;
     let mut bytes: Vec<u8> = Vec::new();
     while let Some(field) = payload.try_next().await.map_err(|e| {
@@ -251,25 +247,11 @@ pub async fn upload_image(mut payload: Multipart) -> Result<HttpResponse, ApiErr
         if !ALLOWED_MIME.contains(&mime.as_str()) {
             return Ok(HttpResponse::UnsupportedMediaType().finish());
         }
-        let dir  = format!("{}/images/{}/", image_base_dir(), &hash[0..2]);
-        let path = format!("{}{}", dir, hash);
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| { log::error!("mkdir error: {e}"); ApiError::Internal })?;
-
-        // create_new=true ⇒ AlreadyExists → 409
-        let mut f = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::AlreadyExists {
-                    return ApiError::Conflict;
-                }
-                log::error!("file open error: {e}");
-                ApiError::Internal
-            })?;
-         f.write_all(&bytes)
-             .map_err(|e| { log::error!("file write error: {e}"); ApiError::Internal })?;
+        match data.image_store.save(&hash, &mime, &bytes).await {
+            Ok(()) => {},
+            Err(ImageStoreError::Duplicate) => return Err(ApiError::Conflict),
+            Err(e) => { log::error!("image_store save error: {e}"); return Err(ApiError::Internal); }
+        }
          let resp = ImageUploadResponse { hash, mime, size: bytes.len() };
          return Ok(HttpResponse::Created().json(resp));
     }
@@ -277,17 +259,14 @@ pub async fn upload_image(mut payload: Multipart) -> Result<HttpResponse, ApiErr
 }
 
 // NEW: serve stored image / video by hash
-pub async fn get_image(path: web::Path<String>) -> Result<HttpResponse, ApiError> {
+pub async fn get_image(data: web::Data<AppState>, path: web::Path<String>) -> Result<HttpResponse, ApiError> {
     let hash = path.into_inner();
     if hash.len() < 2 { return Err(ApiError::NotFound); }
-    let file_path = format!("{}/images/{}/{}", image_base_dir(), &hash[0..2], hash);
-    let bytes = std::fs::read(&file_path).map_err(|_| ApiError::NotFound)?;
-    let mime = infer::get(&bytes)
-        .map(|t| t.mime_type())
-        .unwrap_or("application/octet-stream");
-    Ok(HttpResponse::Ok()
-        .insert_header(("Content-Type", mime))
-        .body(bytes))
+    match data.image_store.load(&hash).await {
+        Ok((bytes, mime)) => Ok(HttpResponse::Ok().insert_header(("Content-Type", mime)).body(bytes)),
+        Err(ImageStoreError::NotFound) => Err(ApiError::NotFound),
+        Err(e) => { log::error!("image_store load error: {e}"); Err(ApiError::Internal) }
+    }
 }
 
 // NEW -----------------------------------------------------------------

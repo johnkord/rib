@@ -3,6 +3,7 @@
 use actix_web::{test, App};
 use rib::{routes::{config, AppState}, security::SecurityHeaders, auth::{create_jwt, Role}};
 use rib::repo::inmem::InMemRepo;
+use rib::storage::FsImageStore;
 use std::sync::Arc;
 use serial_test::serial;
 
@@ -22,10 +23,11 @@ fn user_token() -> String { create_jwt("2", "user", vec![Role::User]).unwrap() }
 async fn test_board_thread_reply_flow_routes() {
     setup_env();
     let repo = InMemRepo::new();
+    let image_store = FsImageStore::new();
     let app = test::init_service(
         App::new()
             .wrap(SecurityHeaders::from_env())
-            .app_data(actix_web::web::Data::new(AppState { repo: Arc::new(repo) }))
+            .app_data(actix_web::web::Data::new(AppState { repo: Arc::new(repo), image_store: Arc::new(image_store) }))
             .configure(config)
     ).await;
 
@@ -121,10 +123,11 @@ async fn test_board_thread_reply_flow_routes() {
 async fn test_auth_me_and_refresh() {
     setup_env();
     let repo = InMemRepo::new();
+    let image_store = FsImageStore::new();
     let app = test::init_service(
         App::new()
             .wrap(SecurityHeaders::from_env())
-            .app_data(actix_web::web::Data::new(AppState { repo: Arc::new(repo) }))
+            .app_data(actix_web::web::Data::new(AppState { repo: Arc::new(repo), image_store: Arc::new(image_store) }))
             .configure(config)
     ).await;
 
@@ -156,10 +159,11 @@ async fn test_auth_me_and_refresh() {
 async fn test_set_discord_role_endpoint() {
     setup_env();
     let repo = InMemRepo::new();
+    let image_store = FsImageStore::new();
     let app = test::init_service(
         App::new()
             .wrap(SecurityHeaders::from_env())
-            .app_data(actix_web::web::Data::new(AppState { repo: Arc::new(repo) }))
+            .app_data(actix_web::web::Data::new(AppState { repo: Arc::new(repo), image_store: Arc::new(image_store) }))
             .configure(config)
     ).await;
 
@@ -179,10 +183,11 @@ async fn test_set_discord_role_endpoint() {
 async fn test_get_image_after_upload() {
     setup_env();
     let repo = InMemRepo::new();
+    let image_store = FsImageStore::new();
     let app = test::init_service(
         App::new()
             .wrap(SecurityHeaders::from_env())
-            .app_data(actix_web::web::Data::new(AppState { repo: Arc::new(repo) }))
+            .app_data(actix_web::web::Data::new(AppState { repo: Arc::new(repo), image_store: Arc::new(image_store) }))
             .configure(config)
     ).await;
 

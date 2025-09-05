@@ -9,10 +9,12 @@ mod routes;
 mod openapi;
 mod security;
 mod auth;
+mod storage;
 
 #[cfg(feature = "inmem-store")]
 use repo::inmem::InMemRepo;
 use routes::{config, AppState};
+use storage::build_image_store;
 use security::SecurityHeaders;
 use openapi::ApiDoc;
 use utoipa::OpenApi; // bring trait into scope for ApiDoc::openapi()
@@ -32,6 +34,10 @@ async fn moderator_only(auth: Auth) -> actix_web::Result<impl Responder> {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // Environment variables must be set externally (VS Code launch.json, shell, systemd, Docker, etc.)
+    // Load .env automatically only in debug builds to reduce manual setup overhead.
+    if cfg!(debug_assertions) {
+        let _ = dotenv::dotenv();
+    }
     
     // Validate required environment variables
     validate_env_vars();
@@ -67,6 +73,7 @@ async fn main() -> std::io::Result<()> {
     };
 
     let openapi = ApiDoc::openapi();
+    let image_store = build_image_store().await; // FS or S3 depending on feature/env
     info!("OpenAPI spec generated");
 
     let server = HttpServer::new(move || {
@@ -106,6 +113,7 @@ async fn main() -> std::io::Result<()> {
         // Provide repo (either in-memory or Postgres)
         app = app.app_data(actix_web::web::Data::new(AppState {
             repo: Arc::new(repo.clone()),
+            image_store: image_store.clone(),
         }));
 
         app

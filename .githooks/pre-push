@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Pre-push hook: basic safety net.
+set -euo pipefail
+echo "[pre-push] Running clippy (warnings denied)"
+cargo clippy --all-targets --all-features -- -D warnings
+echo "[pre-push] Running test suite (default features)"
+cargo test --no-fail-fast
+echo "[pre-push] Running smoke script (containers must be up if endpoints required)"
+if [ -x scripts/smoke.sh ]; then
+  bash scripts/smoke.sh || echo "[pre-push] smoke failed (non-blocking)"
+else
+  echo "[pre-push] smoke script missing"
+fi
+echo "[pre-push] Done"

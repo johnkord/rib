@@ -1,3 +1,4 @@
+pub mod storage; // expose storage for routes
 pub mod models;
 pub mod repo;
 pub mod error;

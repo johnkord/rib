@@ -2,17 +2,26 @@
   "version": "0.2.0",
   "compounds": [
     {
-      "name": "Full-stack Dev",
-      "configurations": ["Debug API (Rust)", "Dev Frontend (React)"]
+      "name": "Full-stack Dev (inmem)",
+      "configurations": ["Debug API (Rust inmem)", "Dev Frontend (React)"]
+    },
+    {
+      "name": "Full-stack Dev (postgres)",
+      "configurations": ["Debug API (Rust postgres)", "Dev Frontend (React)"]
+    },
+    {
+      "name": "Parity (Containers) + Smoke",
+      "configurations": ["Smoke (after parity up)"]
     }
   ],
   "configurations": [
     {
-      "name": "Debug API (Rust)",
+      "name": "Debug API (Rust postgres)",
       "type": "lldb",
       "request": "launch",
+      "preLaunchTask": "dev infra up",
       "cargo": {
-        "args": ["build", "--features", "postgres-store"],
+        "args": ["build", "--no-default-features", "--features", "postgres-store"],
         "filter": { "kind": "bin", "name": "rib" }
       },
       "cwd": "${workspaceFolder}",
@@ -21,18 +30,7 @@
       "envFile": "${workspaceFolder}/.env"
     },
     {
-      "name": "Dev Frontend (React)",
-      "type": "pwa-node",
-      "request": "launch",
-      "cwd": "${workspaceFolder}/rib-react",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "--host"],
-      "autoAttachChildProcesses": true,
-      "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"]
-    },
-        {
-      "name": "Debug API (Rust) inmem",
+      "name": "Debug API (Rust inmem)",
       "type": "lldb",
       "request": "launch",
       "cargo": {
@@ -43,6 +41,36 @@
       "sourceLanguages": ["rust"],
       "terminal": "integrated",
       "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "Dev Frontend (React)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/rib-react",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--host"],
+      "autoAttachChildProcesses": true,
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Parity Up (containers)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "echo 'Starting containers'; docker compose up -d && echo 'Containers up'"],
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Smoke (after parity up)",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "docker parity up",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "scripts/smoke.sh"],
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
     }
   ]
 }

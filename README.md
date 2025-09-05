@@ -483,6 +483,28 @@ npm install
 npm run dev
 ```
 
+### Development Workflow Reference
+See `docs/dev-workflow.md` for the evolving development environment design, parity strategy, and implementation checklist.
+
+Common convenience targets:
+```bash
+make dev-infra      # start postgres, redis, minio
+make dev-backend    # run backend with auto-reload (needs cargo-watch)
+make dev-frontend   # run Vite dev server
+make build-images   # build all Docker images
+make smoke          # run quick curl-based smoke tests
+```
+
+### Git Hooks (Optional)
+Install local git hooks (pre-push smoke + tests) by pointing git to the provided hooks directory:
+```bash
+git config core.hooksPath .githooks
+```
+Disable temporarily with:
+```bash
+git config --unset core.hooksPath
+```
+
 ### Environment Variables
 
 | Variable | Required | Description |

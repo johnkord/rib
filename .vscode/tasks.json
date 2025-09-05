@@ -23,6 +23,13 @@
       "problemMatcher": ["$rustc"]
     },
     {
+      "label": "cargo test (postgres-store)",
+      "type": "shell",
+      "command": "cargo test --no-default-features --features postgres-store",
+      "group": "test",
+      "problemMatcher": ["$rustc"]
+    },
+    {
       "label": "npm dev (react)",
       "type": "npm",
       "script": "dev",
@@ -46,6 +53,57 @@
       "options": { "cwd": "${workspaceFolder}" },
       "problemMatcher": ["$rustc"],
       "group": { "kind": "build", "isDefault": true }
-    }
+  },
+    {
+      "label": "cargo watch (inmem)",
+      "type": "shell",
+      "command": "cargo watch -x 'run --features inmem-store'",
+      "problemMatcher": ["$rustc"],
+      "detail": "Inner loop backend (in-memory store)"
+    },
+    {
+      "label": "cargo watch (postgres)",
+      "type": "shell",
+      "command": "cargo watch -x 'run --no-default-features --features postgres-store'",
+      "problemMatcher": ["$rustc"],
+      "detail": "Inner loop backend (postgres store feature)"
+    },
+    {
+      "label": "dev infra up",
+      "type": "shell",
+      "command": "docker compose up -d postgres redis minio",
+      "problemMatcher": [] ,
+      "detail": "Start supporting dev infrastructure containers"
+    },
+    {
+      "label": "dev infra down",
+      "type": "shell",
+      "command": "docker compose stop postgres redis minio || true",
+      "problemMatcher": [],
+      "detail": "Stop supporting dev infrastructure containers"
+    },
+    {
+      "label": "docker build images",
+      "type": "shell",
+      "command": "docker compose build",
+      "problemMatcher": [],
+      "group": "build",
+      "detail": "Build all service images (parity check)"
+    },
+    {
+      "label": "docker parity up",
+      "type": "shell",
+      "command": "docker compose up -d",
+      "problemMatcher": [],
+      "dependsOn": ["docker build images"],
+      "detail": "Run full stack via containers (parity mode)"
+    },
+    {
+      "label": "smoke test",
+      "type": "shell",
+      "command": "scripts/smoke.sh",
+      "problemMatcher": [],
+      "detail": "Run scripted smoke test against running stack"
+  }
   ]
 }

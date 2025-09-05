@@ -79,3 +79,44 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/${{ github.repository }}:latest,ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+
+  feature-matrix:
+    name: Feature Matrix (default & postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rib
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 5
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [default, postgres]
+    env:
+      JWT_SECRET: test-jwt-secret-key-which-is-long-enough-123456
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/rib
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Wait for Postgres (only postgres mode)
+        if: matrix.mode == 'postgres'
+        run: until pg_isready -h localhost -U postgres; do sleep 2; done
+      - name: Build
+        run: |
+          if [ "${{ matrix.mode }}" = "postgres" ]; then
+            cargo build --no-default-features --features postgres-store
+          else
+            cargo build
+          fi
+      - name: Test
+        run: |
+          if [ "${{ matrix.mode }}" = "postgres" ]; then
+            cargo test --no-default-features --features postgres-store
+          else
+            cargo test
+          fi

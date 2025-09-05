@@ -1,5 +1,9 @@
 use actix_web::{test, App};
 use rib::config;
+use rib::routes::AppState;
+use rib::repo::inmem::InMemRepo;
+use rib::storage::FsImageStore;
+use std::sync::Arc;
 
 // Helper to build a multipart body with provided bytes and filename
 fn build_multipart(file_name: &str, bytes: &[u8], boundary: &str) -> (String, Vec<u8>) {
@@ -31,7 +35,9 @@ fn sample_txt() -> Vec<u8> { b"hello world".to_vec() }
 async fn test_upload_png_ok() {
     let tmp = tempfile::tempdir().unwrap();
     std::env::set_var("RIB_DATA_DIR", tmp.path().to_str().unwrap());
-    let app = test::init_service(App::new().configure(config)).await;
+    let app = test::init_service(App::new()
+        .app_data(actix_web::web::Data::new(AppState { repo: Arc::new(InMemRepo::new()), image_store: Arc::new(FsImageStore::new()) }))
+        .configure(config)).await;
     let boundary = "BOUNDARY123";
     let (ct, body) = build_multipart("img.png", &sample_png(), boundary);
     let req = test::TestRequest::post()
@@ -52,7 +58,9 @@ async fn test_upload_png_ok() {
 async fn test_upload_unsupported_type() {
     let tmp = tempfile::tempdir().unwrap();
     std::env::set_var("RIB_DATA_DIR", tmp.path().to_str().unwrap());
-    let app = test::init_service(App::new().configure(config)).await;
+    let app = test::init_service(App::new()
+        .app_data(actix_web::web::Data::new(AppState { repo: Arc::new(InMemRepo::new()), image_store: Arc::new(FsImageStore::new()) }))
+        .configure(config)).await;
     let boundary = "BOUNDARYTXT";
     let (ct, body) = build_multipart("file.txt", &sample_txt(), boundary);
     let req = test::TestRequest::post()
@@ -69,7 +77,9 @@ async fn test_upload_unsupported_type() {
 async fn test_upload_duplicate() {
     let tmp = tempfile::tempdir().unwrap();
     std::env::set_var("RIB_DATA_DIR", tmp.path().to_str().unwrap());
-    let app = test::init_service(App::new().configure(config)).await;
+    let app = test::init_service(App::new()
+        .app_data(actix_web::web::Data::new(AppState { repo: Arc::new(InMemRepo::new()), image_store: Arc::new(FsImageStore::new()) }))
+        .configure(config)).await;
     let png = sample_png();
     let boundary1 = "B1";
     let (ct1, body1) = build_multipart("dup.png", &png, boundary1);
@@ -88,7 +98,9 @@ async fn test_upload_duplicate() {
 async fn test_upload_size_limit() {
     let tmp = tempfile::tempdir().unwrap();
     std::env::set_var("RIB_DATA_DIR", tmp.path().to_str().unwrap());
-    let app = test::init_service(App::new().configure(config)).await;
+    let app = test::init_service(App::new()
+        .app_data(actix_web::web::Data::new(AppState { repo: Arc::new(InMemRepo::new()), image_store: Arc::new(FsImageStore::new()) }))
+        .configure(config)).await;
     let mut big = sample_png();
     // Ensure we exceed 10MB limit (10 * 1024 * 1024 + 1)
     let target = 10 * 1024 * 1024 + 1;
