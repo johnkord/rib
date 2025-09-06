@@ -15,7 +15,7 @@ thiserror = "1"
 log = "0.4"
 utoipa = { version = "4", features = ["chrono"] }
 utoipa-swagger-ui = { version = "6", features = ["actix-web"] }
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "macros" ] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "macros" ] }
 actix-multipart = "0.6"
 infer = "0.15"
 futures-util = "0.3"
