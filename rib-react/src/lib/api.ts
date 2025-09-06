@@ -85,8 +85,8 @@ export async function uploadImage(
   });
 
   // 201 Created  ➜ new upload
-  // 409 Conflict ➜ duplicate (acceptable)
-  if (res.status === 201 || res.status === 409) {
+  // 200 OK       ➜ duplicate (idempotent response)
+  if (res.status === 201 || res.status === 200) {
     return res.json();
   }
   // any other status is an error
@@ -128,6 +128,24 @@ export class ApiClient {
       const error = await response.json();
       throw new Error(error.message || 'Failed to set role');
     }
+  }
+
+  async softDelete(kind: 'boards'|'threads'|'replies', id: number) {
+    await this._moderation(kind, id, 'soft-delete', 'POST');
+  }
+  async restore(kind: 'boards'|'threads'|'replies', id: number) {
+    await this._moderation(kind, id, 'restore', 'POST');
+  }
+  async hardDelete(kind: 'boards'|'threads'|'replies', id: number) {
+    await this._moderation(kind, id, '', 'DELETE');
+  }
+
+  private async _moderation(kind: string, id: number, action: string, method: 'POST'|'DELETE') {
+    const token = getAuthToken();
+    if (!token) throw new Error('Not authenticated');
+    const path = action ? `/admin/${kind}/${id}/${action}` : `/admin/${kind}/${id}`;
+    const res = await fetch(apiUrl(path), { method, headers: { 'Authorization': `Bearer ${token}` }});
+    if (!res.ok) throw new Error(await res.text());
   }
 }
 

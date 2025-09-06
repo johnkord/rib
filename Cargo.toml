@@ -15,7 +15,7 @@ thiserror = "1"
 log = "0.4"
 utoipa = { version = "4", features = ["chrono"] }
 utoipa-swagger-ui = { version = "6", features = ["actix-web"] }
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono"], optional = true }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "macros" ] }
 actix-multipart = "0.6"
 infer = "0.15"
 futures-util = "0.3"
@@ -26,15 +26,14 @@ tracing-actix-web = "0.7"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 urlencoding = "2.1"
 async-trait = "0.1"   # NEW: async repository traits
-aws-config = { version = "1", optional = true }
-aws-sdk-s3 = { version = "1", optional = true, features=["behavior-version-latest"] }
+aws-config = { version = "1" }
+aws-sdk-s3 = { version = "1", features=["behavior-version-latest"] }
 dotenv = "0.15"
+anyhow = "1"
+aws-credential-types = "1"
 
 [features]
-default = ["inmem-store"]
-inmem-store = []
-postgres-store = ["sqlx"]
-s3-image-store = ["aws-config", "aws-sdk-s3"]
+# (reserved for future optional backends)
 
 [dev-dependencies]
 actix-rt = "2"

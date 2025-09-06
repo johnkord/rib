@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use thiserror::Error;
 use std::sync::Arc;
+use log::{info, warn, error};
 
 #[derive(Debug, Error)]
 pub enum ImageStoreError {
@@ -15,70 +16,61 @@ pub trait ImageStore: Send + Sync {
     async fn load(&self, hash: &str) -> Result<(Vec<u8>, String), ImageStoreError>;
 }
 
-// ---------------- Filesystem Implementation ----------------
-pub struct FsImageStore {
-    base: String,
-}
-
-impl FsImageStore {
-    pub fn new() -> Self {
-        let base = std::env::var("RIB_DATA_DIR").unwrap_or_else(|_| "data".into());
-        Self { base }
-    }
-    fn path_for(&self, hash: &str) -> (String, String) {
-        let dir = format!("{}/images/{}", self.base, &hash[0..2]);
-        let full = format!("{}/{}", dir, hash);
-        (dir, full)
-    }
-}
-
-#[async_trait]
-impl ImageStore for FsImageStore {
-    async fn save(&self, hash: &str, _mime: &str, bytes: &[u8]) -> Result<(), ImageStoreError> {
-        use std::io::Write;
-        let (dir, full) = self.path_for(hash);
-        std::fs::create_dir_all(&dir).map_err(|e| ImageStoreError::Other(e.to_string()))?;
-        let mut f = match std::fs::OpenOptions::new().write(true).create_new(true).open(&full) {
-            Ok(f) => f,
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Err(ImageStoreError::Duplicate),
-            Err(e) => return Err(ImageStoreError::Other(e.to_string())),
-        };
-        f.write_all(bytes).map_err(|e| ImageStoreError::Other(e.to_string()))?;
-        Ok(())
-    }
-    async fn load(&self, hash: &str) -> Result<(Vec<u8>, String), ImageStoreError> {
-        let (_, full) = self.path_for(hash);
-        let bytes = std::fs::read(&full).map_err(|_| ImageStoreError::NotFound)?;
-        let mime = infer::get(&bytes).map(|t| t.mime_type().to_string()).unwrap_or_else(|| "application/octet-stream".into());
-        Ok((bytes, mime))
-    }
-}
-
-// ---------------- S3 Implementation (MinIO compatible) ----------------
-#[cfg(feature = "s3-image-store")]
+// ---------------- S3 Implementation (MinIO compatible; ONLY supported backend) ----------------
 pub struct S3ImageStore {
     bucket: String,
     client: aws_sdk_s3::Client,
     prefix: String,
 }
 
-#[cfg(feature = "s3-image-store")]
 impl S3ImageStore {
     pub async fn new() -> anyhow::Result<Self> {
+        use aws_credential_types::provider::SharedCredentialsProvider;
+        use aws_credential_types::Credentials;
+
         let bucket = std::env::var("S3_BUCKET").unwrap_or_else(|_| "rib-images".into());
-        let endpoint = std::env::var("S3_ENDPOINT").unwrap_or_else(|_| "http://localhost:9000".into());
-        let region = std::env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".into());
-        let mut loader = aws_config::from_env().region(aws_sdk_s3::config::Region::new(region));
-        // custom endpoint (MinIO)
+        let endpoint = std::env::var("S3_ENDPOINT")
+            .map_err(|_| anyhow::anyhow!("S3_ENDPOINT must be set (MinIO / S3 endpoint)"))?;
+    let region = std::env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".into());
+    let region_clone_for_hint = region.clone();
+        let access = std::env::var("S3_ACCESS_KEY").unwrap_or_default();
+        let secret = std::env::var("S3_SECRET_KEY").unwrap_or_default();
+
+        // Use new defaults builder (avoids deprecation warning from from_env)
+        let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(aws_sdk_s3::config::Region::new(region));
         loader = loader.endpoint_url(endpoint);
+        if !access.is_empty() && !secret.is_empty() {
+            let creds = Credentials::new(access, secret, None, None, "static");
+            loader = loader.credentials_provider(SharedCredentialsProvider::new(creds));
+        }
         let conf = loader.load().await;
-        let client = aws_sdk_s3::Client::new(&conf);
+        // Force path-style addressing (required for most MinIO/local endpoints without wildcard DNS)
+            let s3_conf = aws_sdk_s3::config::Builder::from(&conf)
+                .force_path_style(true)
+                .build();
+        let client = aws_sdk_s3::Client::from_conf(s3_conf);
+        info!("Initialized S3/MinIO client (path-style addressing enabled)");
+
+        // Ensure bucket exists (create if missing)
+        if let Err(e) = client.head_bucket().bucket(&bucket).send().await {
+            warn!("head_bucket failed for '{bucket}' (will attempt create): {e:?}");
+            // Attempt create and bubble up error if it fails (fail fast instead of latent 500s later)
+            if let Err(e2) = client.create_bucket().bucket(&bucket).send().await {
+                // For non us-east-1 regions some providers require a CreateBucketConfiguration; surface hint
+                let region_hint = if region_clone_for_hint != "us-east-1" { " (if this is not MinIO you may need a CreateBucketConfiguration for non-us-east-1 regions)" } else { "" };
+                error!("create_bucket failed for '{bucket}': {e2:?}");
+                return Err(anyhow::anyhow!("failed to ensure bucket '{bucket}': {e2}{region_hint}"));
+            } else {
+                info!("created bucket '{bucket}'");
+            }
+        }
+
         Ok(Self { bucket, client, prefix: "images".into() })
     }
     fn key_for(&self, hash: &str) -> String { format!("{}/{}/{}", self.prefix, &hash[0..2], hash) }
 }
 
-#[cfg(feature = "s3-image-store")]
 #[async_trait]
 impl ImageStore for S3ImageStore {
     async fn save(&self, hash: &str, _mime: &str, bytes: &[u8]) -> Result<(), ImageStoreError> {
@@ -88,11 +80,19 @@ impl ImageStore for S3ImageStore {
         if self.client.head_object().bucket(&self.bucket).key(&key).send().await.is_ok() {
             return Err(ImageStoreError::Duplicate);
         }
-        self.client.put_object()
+        let put = self.client.put_object()
             .bucket(&self.bucket)
             .key(&key)
             .body(ByteStream::from(bytes.to_vec()))
-            .send().await.map_err(|e| ImageStoreError::Other(e.to_string()))?;
+            // Best-effort content type detection (helps when serving directly from S3/MinIO)
+            .content_type(infer::get(bytes).map(|t| t.mime_type().to_string()).unwrap_or_else(|| "application/octet-stream".into()));
+        if let Err(e) = put.send().await {
+            // Log full debug (including SDK classification) but return concise error upstream
+            error!("put_object failed hash={hash} key={key} bucket={} err={:?}", self.bucket, e);
+            // Map common cases for nicer operator hints
+            let hint = if e.to_string().contains("NoSuchBucket") { " (bucket missing or not yet propagated)" } else if e.to_string().contains("AccessDenied") { " (check S3_ACCESS_KEY/S3_SECRET_KEY permissions)" } else { "" };
+            return Err(ImageStoreError::Other(format!("{}{}", e.to_string(), hint)));
+        }
         Ok(())
     }
     async fn load(&self, hash: &str) -> Result<(Vec<u8>, String), ImageStoreError> {
@@ -101,20 +101,19 @@ impl ImageStore for S3ImageStore {
             .map_err(|_| ImageStoreError::NotFound)?;
         let data = obj.body.collect().await.map_err(|e| ImageStoreError::Other(e.to_string()))?;
         // ContentType may be None; fallback by sniffing
-        let mut bytes = Vec::from(data.into_bytes().as_ref());
+    let bytes = Vec::from(data.into_bytes().as_ref());
         let mime = infer::get(&bytes).map(|t| t.mime_type().to_string())
             .unwrap_or_else(|| "application/octet-stream".into());
         Ok((bytes, mime))
     }
 }
 
-// Factory helper used in main
+// Factory helper used in main (now S3-only; panic early if misconfigured)
 pub async fn build_image_store() -> Arc<dyn ImageStore> {
-    #[cfg(feature = "s3-image-store")]
-    if std::env::var("S3_ENDPOINT").is_ok() {
-        if let Ok(store) = S3ImageStore::new().await {
-            return Arc::new(store);
-        }
+    match S3ImageStore::new().await {
+        Ok(store) => Arc::new(store),
+        Err(e) => panic!("Failed to initialize S3 image store: {e}"),
     }
-    Arc::new(FsImageStore::new())
 }
+
+// (Re-export removed; tests use their own mock implementation.)

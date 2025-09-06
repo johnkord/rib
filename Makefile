@@ -6,7 +6,7 @@ init:
 	cargo check
 
 run:
-	cargo run --features inmem-store
+	cargo run
 
 # --- Development Workflow Targets (see docs/dev-workflow.md) ---
 
@@ -21,7 +21,7 @@ docker-dev: dev-infra
 # Run backend with auto-reload (requires `cargo install cargo-watch` once)
 dev-backend:
 	@command -v cargo-watch >/dev/null 2>&1 || { echo "cargo-watch not installed. Run: cargo install cargo-watch"; exit 1; }
-	RUST_LOG=$${RUST_LOG:-info} cargo watch -x 'run --features inmem-store'
+	RUST_LOG=$${RUST_LOG:-info} cargo watch -x 'run'
 
 # Run frontend (Vite dev server)
 dev-frontend:

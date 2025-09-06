@@ -8,12 +8,13 @@ export interface Reply {
 	image_hash?: string;    // ...unchanged...
 	mime?: string;          // ...unchanged...
 	created_at: string;     // NEW – ISO timestamp
+  deleted_at?: string | null;
 }
 
-export function useReplies(threadId: number | null) {
+export function useReplies(threadId: number | null, includeDeleted: boolean) {
   return useQuery<Reply[]>({
-    queryKey: ['replies', threadId],
-    queryFn: () => fetchJson(`/threads/${threadId}/replies`),
+    queryKey: ['replies', threadId, includeDeleted],
+    queryFn: () => fetchJson(`/threads/${threadId}/replies${includeDeleted ? '?include_deleted=1' : ''}`),
     enabled: !!threadId,
   });
 }

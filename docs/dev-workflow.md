@@ -7,7 +7,7 @@ Define a fast inner development loop (debuggable Rust + React locally) while pre
 | Concern | Current Implementation (as of commit `main`) |
 |---------|----------------------------------------------|
 | Backend framework | Actix Web (`src/main.rs`, `routes.rs`) |
-| Repo modes | Feature flags: `inmem-store` (default), optional `postgres-store` (in progress) |
+| Repo modes | Postgres backend (default) |
 | Bind address | `0.0.0.0:8080` (recent change for container networking) |
 | Auth | JWT (see `src/auth.rs`), Discord OAuth (requires env vars) |
 | Image storage | Filesystem under `/app/data/images/<prefix>/<hash>` (see `upload_image` in `routes.rs`); NOT YET using MinIO bucket |
@@ -28,7 +28,7 @@ Define a fast inner development loop (debuggable Rust + React locally) while pre
 ### Development Modes
 | Mode | Description | Commands / Tooling |
 |------|-------------|--------------------|
-| Inner Loop (Local) | Local Rust + Vite dev server; infra via containers | `docker compose up -d postgres redis minio`; `cargo watch -x 'run --features inmem-store'`; `npm run dev` |
+| Inner Loop (Local) | Local Rust + Vite dev server; infra via containers | `docker compose up -d postgres redis minio`; `cargo watch -x 'run'`; `npm run dev` |
 | Parity Check (Container) | Build & run full images (Rust release build + Nginx bundle) | `docker compose build && docker compose up -d` |
 | Feature Variant Check | Run tests with Postgres feature | `cargo test --no-default-features --features postgres-store` (optionally inside container) |
 | Smoke Test | Hit critical endpoints & asset path | Script or Make target (see checklist) |
@@ -36,15 +36,15 @@ Define a fast inner development loop (debuggable Rust + React locally) while pre
 ### Recommended Tooling Additions
 1. **Makefile targets** (extend existing `Makefile`):
    - `make dev-infra` → `docker compose up -d postgres redis minio`
-   - `make dev-backend` → run `cargo watch -x 'run --features inmem-store'`
+   - `make dev-backend` → run `cargo watch -x 'run'`
    - `make dev-frontend` → run `npm run dev --prefix rib-react`
    - `make smoke` → execute a shell script issuing curl calls (boards list, image fetch, docs, health checks).
    - `make build-images` → `docker compose build`.
 2. **docker-compose.override.yml** (dev-only):
    - Mount backend source: `./src:/app/src` (if you want in-container hot reload alternative).
-   - Override backend command: `cargo watch -x 'run --features inmem-store'`.
+   - Override backend command: `cargo watch -x 'run'`.
 3. **Pre-push Git hook** (`.githooks/pre-push`): run `make build-images && make smoke` (optional opt-in) to catch container regressions.
-4. **CI matrix (future)**: run test job with `inmem-store` (default) and `postgres-store` features.
+4. **CI**: single backend (Postgres) simplifies matrix.
 5. **Rust `dotenvy` (dev only)** to load `.env` automatically when running locally (production still passes env explicitly).
 6. **MinIO integration (future)**: Replace filesystem writes in `upload_image` with S3 PutObject; configurable via feature flag `s3-image-store`.
 
@@ -72,7 +72,7 @@ echo "[smoke] PASS"
 ### Migration Toward MinIO for Images (Future Design Excerpt)
 1. Introduce feature flag `s3-image-store` in `Cargo.toml`.
 2. Abstract storage behind a trait (e.g., `ImageStore` with `put(bytes) -> {hash, mime}`, `get(hash) -> Option<(bytes, mime)>`).
-3. Provide `FsImageStore` (current logic) and `S3ImageStore` (MinIO via `aws-sdk-s3` or `minio` crate / `s3` crate).
+3. Provide `S3ImageStore` (MinIO via `aws-sdk-s3`). Filesystem storage has been removed.
 4. Inject via `AppState` at startup based on feature + env (`S3_ENDPOINT`, credentials). 
 5. Update tests to parametrize or add a small in-memory stub for unit tests.
 
@@ -80,7 +80,7 @@ echo "[smoke] PASS"
 | Task | Command |
 |------|---------|
 | Start infra only | `docker compose up -d postgres redis minio` |
-| Run backend locally | `cargo watch -x 'run --features inmem-store'` |
+| Run backend locally | `cargo watch -x 'run'` |
 | Run backend with Postgres feature | `cargo watch -x 'run --no-default-features --features postgres-store'` |
 | Run frontend dev | `(cd rib-react && npm run dev)` |
 | Container parity test | `docker compose build && docker compose up -d` |

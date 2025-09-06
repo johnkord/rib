@@ -248,7 +248,7 @@ cargo watch -x run
 
 ### 9.5 Local Profiles
 - `RUST_LOG=debug RIB_PROFILE=dev` enables verbose SQL + feature flags.
-- `RIB_FEATURES="inmem-store,unsafe-fast-hash"` aids rapid prototyping (never in prod).
+- `RIB_FEATURES="unsafe-fast-hash"` (if reintroduced) would aid rapid prototyping (never in prod).
 
 ### 9.6 Database Seeding
 `cargo run --bin seed` populates sample boards & threads (feature-gated).

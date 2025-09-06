@@ -2,12 +2,8 @@
   "version": "0.2.0",
   "compounds": [
     {
-      "name": "Full-stack Dev (inmem)",
-      "configurations": ["Debug API (Rust inmem)", "Dev Frontend (React)"]
-    },
-    {
-      "name": "Full-stack Dev (postgres)",
-      "configurations": ["Debug API (Rust postgres)", "Dev Frontend (React)"]
+      "name": "Full-stack Dev",
+      "configurations": ["Debug API (Rust)", "Dev Frontend (React)"]
     },
     {
       "name": "Parity (Containers) + Smoke",
@@ -16,31 +12,20 @@
   ],
   "configurations": [
     {
-      "name": "Debug API (Rust postgres)",
+      "name": "Debug API (Rust)",
       "type": "lldb",
       "request": "launch",
       "preLaunchTask": "dev infra up",
+      "postDebugTask": "dev infra down",
       "cargo": {
-        "args": ["build", "--no-default-features", "--features", "postgres-store"],
+        "args": ["build"],
         "filter": { "kind": "bin", "name": "rib" }
       },
       "cwd": "${workspaceFolder}",
       "sourceLanguages": ["rust"],
       "terminal": "integrated",
-      "envFile": "${workspaceFolder}/.env"
-    },
-    {
-      "name": "Debug API (Rust inmem)",
-      "type": "lldb",
-      "request": "launch",
-      "cargo": {
-        "args": ["build", "--features", "inmem-store"],
-        "filter": { "kind": "bin", "name": "rib" }
-      },
-      "cwd": "${workspaceFolder}",
-      "sourceLanguages": ["rust"],
-      "terminal": "integrated",
-      "envFile": "${workspaceFolder}/.env"
+      "envFile": "${workspaceFolder}/.env",
+      "program": "${workspaceFolder}/target/debug/rib"
     },
     {
       "name": "Dev Frontend (React)",

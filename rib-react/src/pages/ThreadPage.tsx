@@ -1,8 +1,9 @@
 import { FormEvent, useState, useMemo, useEffect } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import { useReplies, useCreateReply } from '../hooks/useReplies';
+import { useAuth } from '../hooks/useAuth';
 import { useQuery } from '@tanstack/react-query';
-import { fetchJson, imageUrl } from '../lib/api';
+import { fetchJson, imageUrl, apiClient } from '../lib/api';
 import { useBoards } from '../hooks/useBoards';
 import MediaModal from '../components/MediaModal';
 
@@ -15,23 +16,26 @@ interface Thread {
   bump_time:  string;
   image_hash?: string;
   mime?: string | null;
+  deleted_at?: string | null;
 }
 type MediaItem = { hash: string; mime: string | null };
 
 export function ThreadPage() {
   const { id } = useParams();
   const threadId = id ? Number(id) : null;
+  const { user } = useAuth();
   const thread = useQuery<Thread>({
     queryKey: ['thread', threadId],
     queryFn: () => fetchJson(`/threads/${threadId}`)
   });
-  const { data: replies, isFetching, refetch: refreshReplies } = useReplies(threadId); // ← UPDATED
-  const createReply = useCreateReply();
-  const [content, setContent] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const { data: replies, isFetching, refetch: refreshReplies } = useReplies(threadId, user?.role === 'admin' && showDeleted);
+    const createReply = useCreateReply();
+    const [content, setContent] = useState('');
+    const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const { data: boards } = useBoards();
+  const { data: boards } = useBoards(false);
   const boardSlug = boards?.find(b => b.id === thread.data?.board_id)?.slug;
   const location = useLocation();
   const [viewer, setViewer] = useState<{ index: number; items: MediaItem[] } | null>(null);
@@ -98,6 +102,21 @@ export function ThreadPage() {
   const mediaItems = useMemo<MediaItem[]>(() => {
     const items: MediaItem[] = [];
     if (thread.data?.image_hash) items.push({ hash: thread.data.image_hash, mime: thread.data.mime ?? null });
+          {user?.role === 'admin' && thread.data?.deleted_at && (
+            <div className="alert alert-warning mb-4 py-2 px-3 text-sm flex items-center justify-between">
+              <span>Thread deleted (admin view)</span>
+              <div className="flex gap-2">
+                <button className="btn btn-xs" onClick={async()=>{ await apiClient.restore('threads', thread.data!.id); await thread.refetch(); }}>Restore</button>
+                <button className="btn btn-xs btn-error" onClick={async()=>{ if(confirm('Hard delete forever?')) { await apiClient.hardDelete('threads', thread.data!.id); window.location.href = '/'; } }}>Hard Delete</button>
+              </div>
+            </div>
+          )}
+          {user?.role === 'admin' && !thread.data?.deleted_at && (
+            <div className="mb-4 flex gap-2">
+              <button className="btn btn-xs" onClick={async()=>{ await apiClient.softDelete('threads', thread.data!.id); await thread.refetch(); }}>Soft Delete</button>
+              <button className="btn btn-xs btn-error" onClick={async()=>{ if(confirm('Hard delete thread permanently?')) { await apiClient.hardDelete('threads', thread.data!.id); window.location.href = '/'; } }}>Hard Delete</button>
+            </div>
+          )}
     sortedReplies.forEach(r => { if (r.image_hash) items.push({ hash: r.image_hash, mime: r.mime ?? null }); });
     return items;
   }, [thread.data, sortedReplies]);
@@ -123,6 +142,11 @@ export function ThreadPage() {
       {!thread.isFetching && thread.data && (
         <p className="mb-1 text-sm text-gray-500">
           Link:&nbsp;
+        {user?.role === 'admin' && (
+          <label className="flex items-center gap-1 text-xs ml-3">
+            <input type="checkbox" checked={showDeleted} onChange={e=>{ setShowDeleted(e.target.checked); refreshReplies(); }} /> Show deleted
+          </label>
+        )}
           <Link className="link" to={`/thread/${thread.data.id}`}>/thread/{thread.data.id}</Link>
         </p>
       )}

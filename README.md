@@ -248,7 +248,7 @@ cargo watch -x run
 
 ### 9.5 Local Profiles
 - `RUST_LOG=debug RIB_PROFILE=dev` enables verbose SQL + feature flags.
-- `RIB_FEATURES="inmem-store,unsafe-fast-hash"` aids rapid prototyping (never in prod).
+- `RIB_FEATURES="unsafe-fast-hash"` (if added) would aid rapid prototyping (never in prod).
 
 ### 9.6 Database Seeding
 `cargo run --bin seed` populates sample boards & threads (feature-gated).
@@ -473,7 +473,7 @@ cd rib
 
 4. Run the server:
 ```bash
-cargo run --features inmem-store
+cargo run
 ```
 
 5. Start the frontend (in another terminal):
@@ -514,7 +514,6 @@ git config --unset core.hooksPath
 | `DISCORD_CLIENT_SECRET` | No | Discord OAuth application secret |
 | `DISCORD_REDIRECT_URI` | No | OAuth callback URL |
 | `FRONTEND_URL` | No | Frontend URL for redirects (default: http://localhost:5173) |
-| `RIB_DATA_DIR` | No | Directory for in-memory snapshot (default: ./data) |
 | `BOOTSTRAP_ADMIN_DISCORD_IDS` | No | Comma‑separated Discord user IDs granted Admin on first login (e.g. `188880431955968000`) |
 | `RUST_LOG` | No | Log level (info, debug, warn, error) |
 
@@ -533,17 +532,17 @@ Environment variables must be set before running the application:
 
 ```bash
 # Linux/macOS - Set variables inline
-JWT_SECRET="your-secret" RUST_LOG=info cargo run --features inmem-store
+JWT_SECRET="your-secret" RUST_LOG=info cargo run
 
 # Or export them first
 export JWT_SECRET="your-secret"
 export RUST_LOG=info
-cargo run --features inmem-store
+cargo run
 
 # Using a tool like direnv (install separately)
 echo 'dotenv' > .envrc
 direnv allow
-cargo run --features inmem-store
+cargo run
 ```
 
 ### Production

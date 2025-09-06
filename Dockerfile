@@ -19,9 +19,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY migrations ./migrations
 
-# Build the application with inmem-store feature 
-# Note: postgres-store implementation is not yet complete, using inmem-store for now
-RUN cargo build --release --features inmem-store
+# Build the application (Postgres backend is default now)
+RUN cargo build --release
 
 # Runtime stage
 FROM debian:bookworm-slim

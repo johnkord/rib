@@ -22,13 +22,7 @@
       "group": "test",
       "problemMatcher": ["$rustc"]
     },
-    {
-      "label": "cargo test (postgres-store)",
-      "type": "shell",
-      "command": "cargo test --no-default-features --features postgres-store",
-      "group": "test",
-      "problemMatcher": ["$rustc"]
-    },
+  // postgres is now default; specialized feature test task removed
     {
       "label": "npm dev (react)",
       "type": "npm",
@@ -55,18 +49,11 @@
       "group": { "kind": "build", "isDefault": true }
   },
     {
-      "label": "cargo watch (inmem)",
+      "label": "cargo watch",
       "type": "shell",
-      "command": "cargo watch -x 'run --features inmem-store'",
+      "command": "cargo watch -x 'run'",
       "problemMatcher": ["$rustc"],
-      "detail": "Inner loop backend (in-memory store)"
-    },
-    {
-      "label": "cargo watch (postgres)",
-      "type": "shell",
-      "command": "cargo watch -x 'run --no-default-features --features postgres-store'",
-      "problemMatcher": ["$rustc"],
-      "detail": "Inner loop backend (postgres store feature)"
+      "detail": "Inner loop backend (postgres default)"
     },
     {
       "label": "dev infra up",

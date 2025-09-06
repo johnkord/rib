@@ -5,7 +5,8 @@ import { useAuth } from '../hooks/useAuth';
 
 export function BoardsPage() {
   const { user } = useAuth();
-  const { data, isFetching } = useBoards();
+  const [showDeleted, setShowDeleted] = useState(false);
+  const { data, isFetching, refetch } = useBoards(user?.role === 'admin' && showDeleted);
   const createBoard = useCreateBoard();
   const [slug, setSlug] = useState('');
   const [title, setTitle] = useState('');
@@ -27,7 +28,15 @@ export function BoardsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl mb-4">Boards</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl">Boards</h1>
+        {user?.role === 'admin' && (
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" checked={showDeleted} onChange={e=>{setShowDeleted(e.target.checked); refetch();}} />
+            Show deleted
+          </label>
+        )}
+      </div>
 
       {/* Create-board form – Admins only ------------------------ */}
       {user?.role === 'admin' ? (
@@ -47,7 +56,10 @@ export function BoardsPage() {
       <ul>
         {isFetching && <li>Loading…</li>}
         {!isFetching && data?.map(b => (
-          <li key={b.id}><Link className="link" to={`/b/${b.slug}`}>/{b.slug}/ – {b.title}</Link></li>
+          <li key={b.id} className={`flex items-center gap-3 mb-1 ${b.deleted_at ? 'opacity-60' : ''}`}>
+            <Link className="link" to={`/b/${b.slug}`}>/{b.slug}/ – {b.title}</Link>
+            {b.deleted_at && <span className="badge badge-error badge-sm">Deleted</span>}
+          </li>
         ))}
       </ul>
     </div>

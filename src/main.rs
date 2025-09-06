@@ -11,8 +11,6 @@ mod security;
 mod auth;
 mod storage;
 
-#[cfg(feature = "inmem-store")]
-use repo::inmem::InMemRepo;
 use routes::{config, AppState};
 use storage::build_image_store;
 use security::SecurityHeaders;
@@ -55,21 +53,21 @@ async fn main() -> std::io::Result<()> {
     info!("Frontend URL: {}", 
         std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:5173".to_string()));
 
-    #[cfg(all(feature = "inmem-store", not(feature = "postgres-store")))]
-    let repo = InMemRepo::new();
-    #[cfg(all(feature = "inmem-store", not(feature = "postgres-store")))]
-    info!("Using in-memory repository backend");
-
-    #[cfg(feature = "postgres-store")]
+    // Build Postgres repository (default and only backend now) and run migrations
     let repo = {
         use sqlx::postgres::PgPoolOptions;
-        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for postgres-store");
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        // Need an active connection (not lazy) so we can run migrations up front
         let pool = PgPoolOptions::new()
             .max_connections(5)
-            .connect_lazy(&db_url)
-            .expect("Failed to create Pg pool");
+            .connect(&db_url)
+            .await
+            .expect("Failed to connect Pg pool");
+        // Run migrations (idempotent). If this fails we abort early with context.
+        if let Err(e) = sqlx::migrate!().run(&pool).await { panic!("Database migration failed: {e}"); }
+        info!("Postgres migrations applied");
         info!("Using Postgres repository backend");
-    crate::repo::pg::PgRepo::new(pool)
+        crate::repo::pg::PgRepo::new(pool)
     };
 
     let openapi = ApiDoc::openapi();

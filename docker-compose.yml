@@ -16,7 +16,6 @@ services:
       - S3_BUCKET=rib-images
       - RUST_LOG=${RUST_LOG:-info}
       - FRONTEND_URL=http://localhost:3000
-      - RIB_DATA_DIR=/app/data
       # Discord OAuth (added)
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
       - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}

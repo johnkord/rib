@@ -90,7 +90,7 @@ For development with hot reload:
 
 2. **Run backend locally:**
    ```bash
-   cargo run --features inmem-store
+   cargo run
    ```
 
 3. **Run frontend locally:**

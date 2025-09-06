@@ -11,12 +11,13 @@ export interface Thread {
   bump_time:  string;        // NEW
   image_hash?: string;
   mime?: string;
+  deleted_at?: string | null;
 }
 
-export function useThreads(boardId: number | null) {
+export function useThreads(boardId: number | null, includeDeleted: boolean) {
   return useQuery<Thread[]>({
-    queryKey: ['threads', boardId],
-    queryFn: () => fetchJson(`/boards/${boardId}/threads`),
+    queryKey: ['threads', boardId, includeDeleted],
+    queryFn: () => fetchJson(`/boards/${boardId}/threads${includeDeleted ? '?include_deleted=1' : ''}`),
     enabled: !!boardId,
   });
 }

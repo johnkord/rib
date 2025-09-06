@@ -2,15 +2,19 @@ import { FormEvent, useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useBoards, useUpdateBoard } from '../hooks/useBoards';
 import { useThreads, useCreateThread } from '../hooks/useThreads';
+import { useAuth } from '../hooks/useAuth';
+import { apiClient } from '../lib/api';
 import { imageUrl } from '../lib/api';
 import MediaModal from '../components/MediaModal';
 
 export function BoardThreadsPage() {
   const { slug } = useParams();
-  const { data: boards } = useBoards();
+  const { user } = useAuth();
+  const [showDeleted, setShowDeleted] = useState(false);
+  const { data: boards } = useBoards(user?.role === 'admin' && showDeleted);
   const board = useMemo(() => boards?.find(b => b.slug === slug), [boards, slug]);
   const boardId = board?.id ?? null;
-  const { data: threads, isFetching, refetch: refreshThreads } = useThreads(boardId); // ← UPDATED (grab refetch)
+  const { data: threads, isFetching, refetch: refreshThreads } = useThreads(boardId, user?.role === 'admin' && showDeleted); // include deleted
   const createThread = useCreateThread();
   const updateBoard = useUpdateBoard();
   const [subject, setSubject] = useState('');
@@ -64,7 +68,7 @@ export function BoardThreadsPage() {
 
       {/* header row ------------------------------------------------ */}
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">              {/* NEW wrapper */}
+        <div className="flex items-center gap-2">
           <h1 className="text-xl font-semibold">
             /{slug}/ – Threads
           </h1>
@@ -75,6 +79,11 @@ export function BoardThreadsPage() {
           >
             {isFetching ? 'Refreshing…' : 'Refresh'}
           </button>
+          {user?.role === 'admin' && (
+            <label className="flex items-center gap-1 text-xs ml-2">
+              <input type="checkbox" checked={showDeleted} onChange={e=>{setShowDeleted(e.target.checked); refreshThreads();}} /> Show deleted
+            </label>
+          )}
         </div>
         {board && !editing && (
           <button className="btn btn-sm" onClick={()=>{
@@ -122,19 +131,27 @@ export function BoardThreadsPage() {
       <ul>
         {isFetching && <li>Loading…</li>}
         {!isFetching && sortedThreads.map(t => (
-          <li key={t.id} className="mb-1">
+          <li key={t.id} className={`mb-1 flex items-center gap-2 ${t.deleted_at ? 'opacity-60' : ''}`}>
             <span className="text-xs text-gray-500 mr-1">#{t.id}</span>
             <Link className="link font-medium" to={`/thread/${t.id}`}>{t.subject}</Link>
+            {t.deleted_at && <span className="badge badge-error badge-sm">Deleted</span>}
             <span className="ml-2 text-xs text-gray-500">
               (last {new Date(t.bump_time).toLocaleString()}, created {new Date(t.created_at).toLocaleString()})
             </span>
-      {t.image_hash && (
-        t.mime?.startsWith('image/')
-    ? <img className="inline-block h-6 ml-2 cursor-pointer" src={imageUrl(t.image_hash)} alt=""
-      onClick={() => setViewer({ hash: t.image_hash!, mime: t.mime ?? null })} />
-    : <span className="ml-2 cursor-pointer"
-      onClick={() => setViewer({ hash: t.image_hash!, mime: t.mime ?? null })}>📹</span>
-      )}
+            {t.image_hash && (
+              t.mime?.startsWith('image/')
+                ? <img className="inline-block h-6 ml-2 cursor-pointer" src={imageUrl(t.image_hash)} alt=""
+                       onClick={() => setViewer({ hash: t.image_hash!, mime: t.mime ?? null })} />
+                : <span className="ml-2 cursor-pointer"
+                       onClick={() => setViewer({ hash: t.image_hash!, mime: t.mime ?? null })}>📹</span>
+            )}
+            {user?.role === 'admin' && (
+              <div className="flex items-center gap-1 ml-2">
+                {!t.deleted_at && <button className="btn btn-xs" onClick={async()=>{ await apiClient.softDelete('threads', t.id); refreshThreads(); }}>Soft</button>}
+                {t.deleted_at && <button className="btn btn-xs" onClick={async()=>{ await apiClient.restore('threads', t.id); refreshThreads(); }}>Restore</button>}
+                <button className="btn btn-xs btn-error" onClick={async()=>{ if(confirm('Hard delete thread? This cannot be undone.')) { await apiClient.hardDelete('threads', t.id); refreshThreads(); } }}>Hard</button>
+              </div>
+            )}
           </li>
         ))}
       </ul>
