@@ -46,6 +46,23 @@ OpenAPI spec: `/docs/api/openapi.yaml`
 Major groups: boards, threads, replies, files, moderation.  
 Supports idempotency (header `Idempotency-Key`) and versioned base path `/api/v1`.
 
+### 4.1 File Upload Support
+The system supports uploading various file types via the `/api/v1/images` endpoint:
+
+**Supported File Types:**
+- **Images**: PNG, JPEG, GIF, WebP, BMP, TIFF, SVG
+- **Videos**: MP4, WebM, AVI, MOV, WMV, FLV  
+- **Audio**: MP3, WAV, OGG, FLAC, AAC, M4A
+- **Documents**: PDF, Word (DOC/DOCX), Excel (XLS/XLSX), PowerPoint (PPT/PPTX), RTF, OpenDocument formats
+- **Text/Code**: Plain text, CSV, HTML, CSS, JavaScript, JSON, XML, YAML
+- **Archives**: ZIP, RAR, 7-Zip, TAR, GZIP, BZIP2
+- **Generic binary files**: application/octet-stream
+
+**Limits:**
+- Maximum file size: 25 MB
+- Content-Type detection via magic bytes
+- SHA256 deduplication prevents duplicate storage
+
 ## 5. Storage Strategy
 
 ### 5.1 Database Schema
