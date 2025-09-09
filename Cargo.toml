@@ -1,0 +1,61 @@
+[package]
+name = "rib"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+actix-web = "4"
+actix-cors = "0.7"
+jsonwebtoken = "9"
+actix-web-httpauth = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+log = "0.4"
+utoipa = { version = "4", features = ["chrono"] }
+utoipa-swagger-ui = { version = "6", features = ["actix-web"] }
+sqlx = { version = "0.7", default-features = false, features = ["runtime-tokio", "runtime-tokio-rustls", "postgres", "chrono", "macros", "migrate" ] }
+actix-multipart = "0.6"
+infer = "0.15"
+futures-util = "0.3"
+sha2 = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-actix-web = "0.7"
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+urlencoding = "2.1"
+async-trait = "0.1"   # NEW: async repository traits
+aws-config = { version = "1" }
+aws-sdk-s3 = { version = "1", features=["behavior-version-latest"] }
+dotenv = "0.15"
+anyhow = "1"
+aws-credential-types = "1"
+rust-embed = { version = "8", optional = true }
+mime = { version = "0.3", optional = true }
+tokio = { version = "1", features = ["time"] }
+dashmap = "5" # NEW: in-memory rate limiting store
+metrics = "0.21" # NEW: lightweight metrics facade
+metrics-exporter-prometheus = "0.13" # NEW: Prometheus exporter
+once_cell = "1"
+bitcoin = "0.30"
+secp256k1 = { version = "0.28", features = ["recovery"] }
+base64 = "0.21"
+rand = "0.8"
+uuid = { version = "1", features = ["v4" ] }
+hex = "0.4"
+
+[features]
+embed-frontend = ["rust-embed", "mime"]
+# Enable embedded frontend by default so the Rust binary always serves the SPA
+default = ["embed-frontend"]
+
+[dev-dependencies]
+actix-rt = "2"
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt", "time"] }
+serial_test = "3"
+uuid = { version = "1", features = ["v4"] }
+wiremock = "0.6"

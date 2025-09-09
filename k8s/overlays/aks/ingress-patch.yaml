@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rib-ingress   # base name; kustomize appends -aks via nameSuffix
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  rules:
+    - host: rib.curlyquote.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: rib-backend-aks
+                port:
+                  number: 8080
+  tls:
+    - hosts:
+        - rib.curlyquote.com
+      secretName: rib-tls

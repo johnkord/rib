@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# AKS deployment overlay.
+# Update images.newTag during deployment per dev-workflow step 11.
+
+resources:
+  - ../../base
+
+nameSuffix: -aks
+images:
+  - name: ribacr123.azurecr.io/rib
+    newTag: b3619da                     # git short SHA tag (CI will mutate)
+
+patches:
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
+      name: rib-ingress
+    path: ingress-host-patch.yaml
+
+# Removed ghcr imagePullSecrets patch (ACR usually uses managed identity / azure auth)
+# Add future patches (config checksum, resources overrides) here.
+# patches: []

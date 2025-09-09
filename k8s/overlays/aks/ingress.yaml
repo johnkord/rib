@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rib-ingress   # will become rib-ingress-aks via nameSuffix
+  namespace: rib
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "15m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header X-Frame-Options DENY;
+      add_header X-Content-Type-Options nosniff;
+      add_header Referrer-Policy no-referrer;
+      add_header Permissions-Policy interest-cohort=();
+      add_header Strict-Transport-Security "max-age=63072000";
+spec:
+  rules:
+    - host: rib.curlyquote.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: rib-backend-aks
+                port:
+                  number: 8080
+  tls:
+    - hosts:
+        - rib.curlyquote.com
+      secretName: rib-tls

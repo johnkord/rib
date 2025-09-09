@@ -1,0 +1,215 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.37.4.10188",
+      "templateHash": "15229305353140582304"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "westus2",
+      "metadata": {
+        "description": "Azure region for regional resources; AFD profile/endpoints use global."
+      }
+    },
+    "env": {
+      "type": "string",
+      "defaultValue": "dev",
+      "metadata": {
+        "description": "Environment name (e.g. dev, prod) used in some resource name suffixes."
+      }
+    },
+    "namePrefix": {
+      "type": "string",
+      "defaultValue": "rib",
+      "metadata": {
+        "description": "Prefix for resource naming. Should be short and globally unique-ish."
+      }
+    },
+    "afdSku": {
+      "type": "string",
+      "defaultValue": "Standard_AzureFrontDoor",
+      "allowedValues": [
+        "Standard_AzureFrontDoor",
+        "Premium_AzureFrontDoor"
+      ],
+      "metadata": {
+        "description": "Front Door (Standard/Premium) SKU name. Allowed: Standard_AzureFrontDoor, Premium_AzureFrontDoor"
+      }
+    },
+    "originHost": {
+      "type": "string",
+      "metadata": {
+        "description": "Origin public hostname or IP (backend ingress / public LB)."
+      }
+    },
+    "originHostHeader": {
+      "type": "string",
+      "metadata": {
+        "description": "Origin host header to send (typically the ingress host / app domain)."
+      }
+    },
+    "originProbePath": {
+      "type": "string",
+      "defaultValue": "/healthz",
+      "metadata": {
+        "description": "Health probe path for origin group."
+      }
+    },
+    "rateLimitPerMinute": {
+      "type": "int",
+      "defaultValue": 120,
+      "minValue": 0,
+      "metadata": {
+        "description": "Rate limiting: requests per 60s window (edge WAF). Set 0 to skip rule creation."
+      }
+    },
+    "endpointName": {
+      "type": "string",
+      "defaultValue": "[format('{0}-{1}-afd', parameters('namePrefix'), parameters('env'))]",
+      "metadata": {
+        "description": "AFD endpoint hostname prefix (will end with .azurefd.net if custom domain not mapped)."
+      }
+    },
+    "wafPrevention": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable WAF policy in Prevention mode (if false only Detection)."
+      }
+    }
+  },
+  "variables": {
+    "wafPolicyName": "[format('{0}-{1}-waf', parameters('namePrefix'), parameters('env'))]",
+    "originGroupName": "[format('{0}-{1}-og', parameters('namePrefix'), parameters('env'))]",
+    "originName": "[format('{0}-{1}-origin', parameters('namePrefix'), parameters('env'))]",
+    "routeName": "[format('{0}-{1}-route', parameters('namePrefix'), parameters('env'))]",
+    "rateLimitCustomRules": "[if(greater(parameters('rateLimitPerMinute'), 0), createArray(createObject('name', 'RateLimitGlobal', 'priority', 1, 'enabledState', 'Enabled', 'rateLimitDurationInMinutes', 1, 'rateLimitThreshold', parameters('rateLimitPerMinute'), 'matchConditions', createArray(createObject('matchVariable', 'RemoteAddr', 'operator', 'IPMatch', 'negateCondition', false(), 'matchValue', createArray('0.0.0.0/0', '::/0'), 'transforms', createArray())), 'action', 'Block')), createArray())]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Cdn/profiles",
+      "apiVersion": "2024-02-01",
+      "name": "[parameters('endpointName')]",
+      "location": "global",
+      "sku": {
+        "name": "[parameters('afdSku')]"
+      }
+    },
+    {
+      "condition": "[greater(parameters('rateLimitPerMinute'), 0)]",
+      "type": "Microsoft.Cdn/wafPolicies",
+      "apiVersion": "2024-02-01",
+      "name": "[variables('wafPolicyName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "policySettings": {
+          "mode": "[if(parameters('wafPrevention'), 'Prevention', 'Detection')]",
+          "enabledState": "Enabled"
+        },
+        "managedRules": {
+          "managedRuleSets": [
+            {
+              "ruleSetType": "DefaultRuleSet",
+              "ruleSetVersion": "2.1"
+            }
+          ]
+        },
+        "customRules": {
+          "rules": "[variables('rateLimitCustomRules')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Cdn/profiles/originGroups",
+      "apiVersion": "2024-02-01",
+      "name": "[format('{0}/{1}', parameters('endpointName'), variables('originGroupName'))]",
+      "properties": {
+        "sessionAffinityState": "Disabled",
+        "healthProbeSettings": {
+          "probePath": "[parameters('originProbePath')]",
+          "probeRequestType": "GET",
+          "probeProtocol": "Http",
+          "probeIntervalInSeconds": 30
+        },
+        "loadBalancingSettings": {
+          "sampleSize": 4,
+          "successfulSamplesRequired": 3,
+          "additionalLatencyInMilliseconds": 0
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Cdn/profiles', parameters('endpointName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Cdn/profiles/originGroups/origins",
+      "apiVersion": "2024-02-01",
+      "name": "[format('{0}/{1}/{2}', parameters('endpointName'), variables('originGroupName'), variables('originName'))]",
+      "properties": {
+        "hostName": "[parameters('originHost')]",
+        "originHostHeader": "[parameters('originHostHeader')]",
+        "httpPort": 80,
+        "httpsPort": 443,
+        "priority": 1,
+        "weight": 1000,
+        "enabledState": "Enabled"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('endpointName'), variables('originGroupName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Cdn/profiles/afdEndpoints",
+      "apiVersion": "2024-02-01",
+      "name": "[format('{0}/{1}', parameters('endpointName'), parameters('endpointName'))]",
+      "location": "global",
+      "properties": {
+        "enabledState": "Enabled"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Cdn/profiles', parameters('endpointName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Cdn/profiles/afdEndpoints/routes",
+      "apiVersion": "2024-02-01",
+      "name": "[format('{0}/{1}/{2}', parameters('endpointName'), parameters('endpointName'), variables('routeName'))]",
+      "properties": {
+        "httpsRedirect": "Enabled",
+        "originGroup": {
+          "id": "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('endpointName'), variables('originGroupName'))]"
+        },
+        "supportedProtocols": [
+          "Http",
+          "Https"
+        ],
+        "linkToDefaultDomain": "Enabled",
+        "patternsToMatch": [
+          "/*"
+        ],
+        "forwardingProtocol": "MatchRequest",
+        "enabledState": "Enabled"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('endpointName'), parameters('endpointName'))]",
+        "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('endpointName'), variables('originGroupName'))]",
+        "[resourceId('Microsoft.Cdn/profiles/originGroups/origins', parameters('endpointName'), variables('originGroupName'), variables('originName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "endpointHost": {
+      "type": "string",
+      "value": "[format('{0}.azurefd.net', parameters('endpointName'))]"
+    },
+    "wafPolicyResourceId": {
+      "type": "string",
+      "value": "[if(greater(parameters('rateLimitPerMinute'), 0), resourceId('Microsoft.Cdn/wafPolicies', variables('wafPolicyName')), '')]"
+    }
+  }
+}

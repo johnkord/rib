@@ -1,0 +1,113 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "cargo build",
+      "type": "shell",
+      "command": "cargo build",
+      "group": "build",
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "cargo run",
+      "type": "shell",
+      "command": "cargo run",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "cargo test",
+      "type": "shell",
+      "command": "cargo test",
+      "group": "test",
+      "problemMatcher": ["$rustc"]
+    },
+  // postgres is now default; specialized feature test task removed
+    {
+      "label": "npm dev (react)",
+      "type": "npm",
+      "script": "dev",
+      "path": "rib-react",
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "Optional Vite dev server (SPA also embedded in Rust binary)"
+    },
+    {
+      "label": "npm build (react)",
+      "type": "npm",
+      "script": "build",
+      "path": "rib-react",
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "One-off production build (used for embedding)"
+    },
+    {
+      "label": "frontend embed rebuild",
+      "type": "shell",
+      "command": "bash -lc 'cd rib-react && npm install --no-audit --no-fund && npm run build && rm -rf ../embedded-frontend/* && cp -r dist/* ../embedded-frontend/'",
+      "problemMatcher": [],
+      "detail": "Rebuild React app and copy assets into embedded-frontend/ for rust-embed",
+      "dependsOn": ["npm build (react)"]
+    },
+    {
+      "label": "embed + infra up",
+      "dependsOrder": "sequence",
+      "dependsOn": ["frontend embed rebuild", "dev infra up"],
+      "problemMatcher": [],
+      "detail": "Rebuild embedded frontend then start postgres/redis/minio"
+    },
+    {
+      "label": "cargo build (rib)",
+      "type": "process",
+      "command": "cargo",
+      "args": ["build", "--bin", "rib"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": ["$rustc"],
+      "group": { "kind": "build", "isDefault": true }
+  },
+    {
+      "label": "cargo watch",
+      "type": "shell",
+      "command": "cargo watch -x 'run'",
+      "problemMatcher": ["$rustc"],
+      "detail": "Inner loop backend (postgres default)"
+    },
+    {
+      "label": "dev infra up",
+      "type": "shell",
+      "command": "docker compose up -d postgres redis minio",
+      "problemMatcher": [] ,
+      "detail": "Start supporting dev infrastructure containers"
+    },
+    {
+      "label": "dev infra down",
+      "type": "shell",
+      "command": "docker compose stop postgres redis minio || true",
+      "problemMatcher": [],
+      "detail": "Stop supporting dev infrastructure containers"
+    },
+    {
+      "label": "docker build images",
+      "type": "shell",
+      "command": "docker compose build",
+      "problemMatcher": [],
+      "group": "build",
+      "detail": "Build all service images (parity check)"
+    },
+    {
+      "label": "docker parity up",
+      "type": "shell",
+      "command": "docker compose up -d",
+      "problemMatcher": [],
+      "dependsOn": ["docker build images"],
+      "detail": "Run full stack via containers (parity mode)"
+    },
+    {
+      "label": "smoke test",
+      "type": "shell",
+      "command": "scripts/smoke.sh",
+      "problemMatcher": [],
+      "detail": "Run scripted smoke test against running stack"
+  }
+  ]
+}

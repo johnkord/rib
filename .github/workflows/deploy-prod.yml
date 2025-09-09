@@ -1,0 +1,168 @@
+name: Deploy to AKS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Manual trigger for testing
+
+permissions:
+  contents: read
+  id-token: write            # added for OIDC flow
+
+env:
+  ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+  ACR_NAME: ${{ vars.ACR_NAME }}
+  AKS_RESOURCE_GROUP: ${{ vars.AKS_RESOURCE_GROUP }}
+  AKS_CLUSTER_NAME: ${{ vars.AKS_CLUSTER_NAME }}
+  # --- new: OIDC parameters (set as organisation / repo variables) ---
+  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  # Azure Key Vault name (define this in GitHub Environment/Repo Variables as KEY_VAULT_NAME)
+  KEY_VAULT_NAME: ${{ vars.KEY_VAULT_NAME }}
+  # ---------------------------------------------------------------
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: prod  # Use the 'prod' environment for protection rules
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set SHORT_SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      # Build frontend FIRST so embedded-frontend exists for Rust compilation
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: rib-react/package-lock.json
+
+      - name: Test React app
+        working-directory: rib-react
+        run: |
+          npm ci --no-audit
+          npm test -- --run
+
+      - name: Build frontend assets
+        run: |
+          cd rib-react
+          npm run build
+          cd ..
+          mkdir -p embedded-frontend
+          cp -r rib-react/dist/* embedded-frontend/
+
+      # Build & push image
+      - name: Build Docker image
+        run: docker build -t $ACR_LOGIN_SERVER/rib:$SHORT_SHA .
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          allow-no-subscriptions: true   # optional; keeps action happy if scope limited
+
+      - name: Login to ACR
+        run: az acr login --name $ACR_NAME
+
+      - name: Push image
+        run: docker push $ACR_LOGIN_SERVER/rib:$SHORT_SHA
+
+      # Deploy
+      - name: Set AKS context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ env.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ env.AKS_CLUSTER_NAME }}
+
+      # (Optional one-time) Ensure rib namespace exists (idempotent)
+      - name: Ensure namespace
+        run: |
+          kubectl get namespace rib >/dev/null 2>&1 || kubectl create namespace rib
+
+      # Sync application secrets from Azure Key Vault into Kubernetes.
+      # This avoids committing secrets and does not print them to logs.
+      - name: Sync secrets from Key Vault
+        id: kv-sync
+        run: |
+          set -euo pipefail
+          if [ -z "${KEY_VAULT_NAME:-}" ]; then
+            echo "KEY_VAULT_NAME not set" >&2
+            exit 1
+          fi
+          KV="$KEY_VAULT_NAME"
+          # Helper to fetch a secret value by name (expects individual secrets per key)
+          fetch() {
+            az keyvault secret show --vault-name "$KV" --name "$1" --query value -o tsv
+          }
+          # Required secrets (fail fast if any missing)
+          JWT_SECRET=$(fetch rib-JWT-SECRET)
+          DATABASE_URL=$(fetch rib-DATABASE-URL)
+          S3_ACCESS_KEY=$(fetch rib-S3-ACCESS-KEY)
+          S3_SECRET_KEY=$(fetch rib-S3-SECRET-KEY)
+          DISCORD_CLIENT_ID=$(fetch rib-DISCORD-CLIENT-ID)
+          DISCORD_CLIENT_SECRET=$(fetch rib-DISCORD-CLIENT-SECRET)
+          # Optional / nice-to-have
+          if az keyvault secret show --vault-name "$KV" --name rib-DISCORD-REDIRECT-URI >/dev/null 2>&1; then
+            DISCORD_REDIRECT_URI=$(fetch rib-DISCORD-REDIRECT-URI)
+          else
+            DISCORD_REDIRECT_URI=""
+          fi
+          # Optional Redis / additional services (ignore if absent)
+          if az keyvault secret show --vault-name "$KV" --name rib-REDIS-URL >/dev/null 2>&1; then
+            REDIS_URL=$(fetch rib-REDIS-URL)
+          else
+            REDIS_URL="redis://redis:6379"  # fallback (non-secret default)
+          fi
+          if az keyvault secret show --vault-name "$KV" --name rib-REDIS-PASSWORD >/dev/null 2>&1; then
+            REDIS_PASSWORD=$(fetch rib-REDIS-PASSWORD)
+          else
+            REDIS_PASSWORD=""  # empty if auth disabled
+          fi
+          # Build secret manifest (atomic apply). Using --dry-run to avoid logging secret values outside the encoded yaml.
+          kubectl -n rib create secret generic rib-secrets \
+            --from-literal=JWT_SECRET="$JWT_SECRET" \
+            --from-literal=DATABASE_URL="$DATABASE_URL" \
+            --from-literal=REDIS_URL="$REDIS_URL" \
+            --from-literal=S3_ACCESS_KEY="$S3_ACCESS_KEY" \
+            --from-literal=S3_SECRET_KEY="$S3_SECRET_KEY" \
+            --from-literal=DISCORD_CLIENT_ID="$DISCORD_CLIENT_ID" \
+            --from-literal=DISCORD_CLIENT_SECRET="$DISCORD_CLIENT_SECRET" \
+            --from-literal=DISCORD_REDIRECT_URI="$DISCORD_REDIRECT_URI" \
+            $( [ -n "$REDIS_PASSWORD" ] && printf -- "--from-literal=REDIS_PASSWORD=%s" "$REDIS_PASSWORD" || true ) \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo "secret_sync=updated" >> "$GITHUB_OUTPUT"
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Deploy with Kustomize
+        run: |
+          cd k8s/overlays/aks
+          # Update the image reference (base already uses ACR registry)
+          # Using git short SHA tag ensures a new image pull (tag immutability assumption)
+          kustomize edit set image $ACR_LOGIN_SERVER/rib=$ACR_LOGIN_SERVER/rib:$SHORT_SHA
+          # APPLY (not dry-run) so new pods are created. The previous version incorrectly used --dry-run=client.
+          kustomize build . | kubectl apply -f -
+          # Quick visibility of the resulting deployment spec & image
+          kubectl -n rib get deploy rib-backend-aks -o wide
+          kubectl -n rib describe deploy rib-backend-aks | grep -i Image:
+
+      - name: Verify deployment
+        run: |
+          kubectl -n rib rollout status deployment/rib-backend-aks --timeout=180s
+          kubectl -n rib get pods -l app=rib-backend
+
+      - name: Smoke test
+        if: success()
+        run: |
+          sleep 10  # Allow ingress to update
+          curl -f https://rib.curlyquote.com/healthz || exit 1
+          kubectl -n rib get pods -l app=rib-backend -o wide

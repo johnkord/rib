@@ -1,0 +1,41 @@
+# Build artifacts
+target/
+dist/
+
+# Dependencies
+node_modules/
+
+# IDEs
+.vscode/
+.idea/
+
+# Git
+.git/
+.github/
+
+# Documentation
+docs/
+README.md
+*.md
+
+# Tests
+tests/
+
+# Frontend code (built separately unless building with EMBED_FRONTEND=true). If embedding, this must be included.
+# (Do not exclude rib-react so Dockerfile can optionally build assets.)
+
+# Local data
+data/
+
+# Environment files (will be set via docker-compose)
+.env
+.env.*
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# OS files
+.DS_Store
+Thumbs.db

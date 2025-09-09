@@ -1,0 +1,64 @@
+{
+  "version": "0.2.0",
+  "compounds": [
+    {
+      "name": "Parity (Containers) + Smoke",
+      "configurations": ["Smoke (after parity up)"]
+    }
+  ],
+  "configurations": [
+    {
+      "name": "Debug API (Rust)",
+      "type": "lldb",
+      "request": "launch",
+      "preLaunchTask": "dev infra up",
+      "postDebugTask": "dev infra down",
+      "cargo": {
+        "args": ["build"],
+        "filter": { "kind": "bin", "name": "rib" }
+      },
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"],
+      "terminal": "integrated",
+      "envFile": "${workspaceFolder}/.env",
+      "program": "${workspaceFolder}/target/debug/rib"
+    },
+    {
+      "name": "Rebuild Embedded Frontend + Debug API",
+      "type": "lldb",
+      "request": "launch",
+  "preLaunchTask": "embed + infra up",
+      "postDebugTask": "dev infra down",
+      "cargo": {
+        "args": ["build"],
+        "filter": { "kind": "bin", "name": "rib" }
+      },
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"],
+      "terminal": "integrated",
+      "envFile": "${workspaceFolder}/.env",
+      "program": "${workspaceFolder}/target/debug/rib",
+      "presentation": { "group": "embedded" },
+      "env": { "FRONTEND_URL": "http://localhost:8080" }
+    },
+    {
+      "name": "Parity Up (containers)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "echo 'Starting containers'; docker compose up -d && echo 'Containers up'"],
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Smoke (after parity up)",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "docker parity up",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "scripts/smoke.sh"],
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}

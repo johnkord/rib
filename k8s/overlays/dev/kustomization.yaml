@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+nameSuffix: -dev
+
+images:
+  # Backend (single container embedding frontend). Override tag via CI or manual apply.
+  - name: ribacr123.azurecr.io/rib
+    newTag: dev-latest
+
+patches:
+  - target:
+      kind: Deployment
+      name: rib-backend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: rib-backend
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3

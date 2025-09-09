@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rib
+  labels:
+    app.kubernetes.io/name: rib
+    app.kubernetes.io/part-of: rib

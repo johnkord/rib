@@ -1,0 +1,12 @@
+# Development overrides: mount source & use cargo-watch for backend hot reload.
+# This file is optional; docker compose will pick it up automatically when present.
+services:
+  rib-backend:
+    volumes:
+      - ./src:/app/src:ro
+      - ./data:/app/data
+    environment:
+      RUST_LOG: "debug"
+    command: ["bash", "-lc", "cargo install cargo-watch >/dev/null 2>&1 || true; cargo watch -x 'run'"]
+    # Faster iterative build by leveraging local target cache (optional):
+    # - ./target:/app/target

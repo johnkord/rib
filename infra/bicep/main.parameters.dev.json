@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "value": "westus2" },
+    "env": { "value": "dev" },
+    "namePrefix": { "value": "rib" },
+    "afdSku": { "value": "Standard_AzureFrontDoor" },
+    "originHost": { "value": "rib.curlyquote.com" },
+    "originHostHeader": { "value": "rib.curlyquote.com" },
+  "originProbePath": { "value": "/healthz" },
+  "rateLimitPerMinute": { "value": 120 },
+  "wafPrevention": { "value": true },
+  "enableWaf": { "value": false },
+  "cheapMode": { "value": true }
+  }
+}
