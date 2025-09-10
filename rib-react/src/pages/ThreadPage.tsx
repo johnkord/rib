@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchJson, imageUrl, apiClient } from '../lib/api';
 import { useBoards } from '../hooks/useBoards';
 import MediaModal from '../components/MediaModal';
+import { linkifyText } from '../lib/linkify';
 
 interface Thread {
   id: number;
@@ -171,7 +172,9 @@ export function ThreadPage() {
               <button className="btn btn-xs btn-error" onClick={async()=>{ if(confirm('Hard delete thread permanently?')) { await apiClient.hardDelete('threads', thread.data!.id); window.location.href = '/'; } }}>Hard Delete</button>
             </div>
           )}
-          <p className={`mb-4 whitespace-pre-wrap ${thread.data.deleted_at ? 'opacity-60 line-through' : ''}`}>{thread.data.body}</p>
+          <p className={`mb-4 whitespace-pre-wrap ${thread.data.deleted_at ? 'opacity-60 line-through' : ''}`}>
+            {linkifyText(thread.data.body)}
+          </p>
         </>
       )}
       {/* ------------------------------------------------------------ */}
@@ -237,7 +240,9 @@ export function ThreadPage() {
                     </div>
                   )}
                 </div>
-                <p className={`whitespace-pre-wrap ${deleted ? 'line-through' : ''}`}>{r.content}</p>
+                <p className={`whitespace-pre-wrap ${deleted ? 'line-through' : ''}`}>
+                  {linkifyText(r.content)}
+                </p>
                 {r.image_hash && r.mime?.startsWith('image/') && (
                   <img
                     className="max-w-xs mt-1 cursor-pointer"
