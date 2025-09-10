@@ -71,7 +71,10 @@ where
             let mut res = svc.call(req).await?;
             let headers = res.response_mut().headers_mut();
             if !headers.contains_key(header::CONTENT_SECURITY_POLICY) {
-                headers.insert(header::CONTENT_SECURITY_POLICY, header::HeaderValue::from_static("default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"));
+                // CSP allows only required embed providers (YouTube + SoundCloud)
+                headers.insert(header::CONTENT_SECURITY_POLICY, header::HeaderValue::from_static(
+                    "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: https:; frame-src 'self' https://www.youtube.com https://music.youtube.com https://w.soundcloud.com; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self';"
+                ));
             }
             if !headers.contains_key(header::REFERRER_POLICY) {
                 headers.insert(
