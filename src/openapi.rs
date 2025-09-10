@@ -19,7 +19,7 @@ use utoipa::OpenApi;
     ),
     components(schemas(
         Board, NewBoard, Thread, NewThread, Reply, NewReply,
-        Image, Report, crate::routes::ImageUploadResponse,
+        Image, Report, crate::routes::FileUploadResponse,
         crate::routes::BitcoinChallengeRequest, crate::routes::BitcoinChallengeResponse,
         crate::routes::BitcoinVerifyRequest, crate::routes::BitcoinVerifyResponse
     ,crate::routes::SetSubjectRoleRequest, crate::routes::RoleAssignment

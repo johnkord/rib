@@ -16,7 +16,6 @@ RIB (Rust Image Board) is a high-performance, self-hostable image board backend 
 
 ### 1.3 Non-Goals
 - Real-time (post-v1)
-- Video support
 
 ### 1.4 Glossary
 Thread - top-level post  
@@ -29,23 +28,40 @@ Sage - non-bumping reply
 Single Actix-web service backed by:
 • pluggable RDBMS (PostgreSQL, SQLite)  
 • optional Redis cache  
-• S3-compatible object store for images
+• S3-compatible object store for file attachments
 
 Key layers: API → Service → Repository → Storage/Cache.
 
 ## 3. Data Models
 See `src/models.rs` for full Rust definitions:
-Board, Thread, Reply, Image, Report (+ enums).
+Board, Thread, Reply, File, Report (+ enums).
 
 Validation highlights:  
 • board.slug: `^[a-z0-9_]{1,12}$`  
 • post.content: 1-2000 chars  
-• image ≤ 10 MB, types: png/jpeg/gif/webp
+• attachments ≤ 25 MB, supports images, videos, documents, archives, and other common file types
 
 ## 4. API
 OpenAPI spec: `/docs/api/openapi.yaml`  
-Major groups: boards, threads, replies, images, moderation.  
+Major groups: boards, threads, replies, files, moderation.  
 Supports idempotency (header `Idempotency-Key`) and versioned base path `/api/v1`.
+
+### 4.1 File Upload Support
+The system supports uploading various file types via the `/api/v1/images` endpoint:
+
+**Supported File Types:**
+- **Images**: PNG, JPEG, GIF, WebP, BMP, TIFF, SVG
+- **Videos**: MP4, WebM, AVI, MOV, WMV, FLV  
+- **Audio**: MP3, WAV, OGG, FLAC, AAC, M4A
+- **Documents**: PDF, Word (DOC/DOCX), Excel (XLS/XLSX), PowerPoint (PPT/PPTX), RTF, OpenDocument formats
+- **Text/Code**: Plain text, CSV, HTML, CSS, JavaScript, JSON, XML, YAML
+- **Archives**: ZIP, RAR, 7-Zip, TAR, GZIP, BZIP2
+- **Generic binary files**: application/octet-stream
+
+**Limits:**
+- Maximum file size: 25 MB
+- Content-Type detection via magic bytes
+- SHA256 deduplication prevents duplicate storage
 
 ## 5. Storage Strategy
 
@@ -63,15 +79,15 @@ Primary storage uses PostgreSQL with the following considerations:
   - Rate limiting counters
   - Session data
 
-### 5.3 Image Storage
+### 5.3 File Storage
 - **Primary**: S3-compatible object storage (AWS S3, MinIO, etc.)
 - **CDN**: CloudFlare or similar for global distribution
-- **Thumbnails**: Generated on upload, stored separately
+- **Thumbnails**: Generated on upload for images, stored separately
 - **Deduplication**: SHA256 hash checking before storage
 
 ### 5.4 Backup & Disaster Recovery
 - **Database**: Point-in-time recovery (WAL shipping to cold storage).  
-- **Images**: Cross-region replication in object storage.  
+- **Files**: Cross-region replication in object storage.  
 - **Config**: Encrypted off-site backups of `.env` and Kubernetes secrets.  
 - Quarterly recovery drills verify backup integrity.
 
@@ -79,18 +95,18 @@ Primary storage uses PostgreSQL with the following considerations:
 | Data | Retention | Action |
 |------|-----------|--------|
 | Threads (active) | indefinite | None |
-| Threads (archived) | 365 days default | Purge images, keep metadata |
+| Threads (archived) | 365 days default | Purge files, keep metadata |
 | Reports | 180 days | Hard delete |
 | Audit logs | 730 days | Glacier/offline archive |
 | Hashed IPs | 90 days | Rotating re-hash + purge old salts |
 
-### 5.6 Image Processing Pipeline
+### 5.6 File Processing Pipeline
 1. Upload received (streamed, max size enforced early).
 2. MIME sniff + magic number verify.
 3. Hash (SHA256) while streaming -> dedupe check.
 4. Temporary quarantine storage.
 5. Optional scanning (clamd / external API).
-6. Resize + thumbnail (libvips recommended).
+6. For images: Resize + thumbnail (libvips recommended).
 7. Commit metadata row + move to final bucket path.
 8. Emit event (internal) for cache warm.
 
@@ -110,14 +126,14 @@ Primary storage uses PostgreSQL with the following considerations:
 - Per-IP write limits:
   - 1 thread per 5 minutes
   - 10 replies per minute
-  - 5 images per hour
+  - 5 file uploads per hour
 - **Per-IP read cap** (ingress/CDN): ~120 requests per minute (burst 240)  
 - Exponential backoff for repeated violations
 
 ### 6.3 Content Security
 - **CAPTCHA**: Required for thread creation
 - **Spam detection**: Bayesian filter for common spam patterns
-- **Image validation**: File type verification, virus scanning
+- **File validation**: File type verification, virus scanning
 - **XSS prevention**: Sanitize all user input
 - **CSRF protection**: Token validation for state-changing operations
 
@@ -132,8 +148,8 @@ Primary storage uses PostgreSQL with the following considerations:
 - **Accessibility**: WCAG 2.1 AA targets for future frontend.
 
 ### 6.6 Offensive-Content Detection
-Pluggable hook that sends image hashes to third-party services
-(e.g., PhotoDNA) before the file is made public. Failing images are quarantined.
+Pluggable hook that sends file hashes to third-party services
+(e.g., PhotoDNA) before the file is made public. Failing files are quarantined.
 
 ### 6.7 Security Headers & Hardening
 Returned default headers:

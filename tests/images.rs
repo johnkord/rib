@@ -57,9 +57,30 @@ fn sample_png() -> Vec<u8> {
     ]
 }
 
-// Invalid (plain text) bytes
+// Invalid (plain text) bytes - should now be accepted as text/plain
 fn sample_txt() -> Vec<u8> {
     b"hello world".to_vec()
+}
+
+// Sample PDF header bytes 
+fn sample_pdf() -> Vec<u8> {
+    // Minimal PDF header that should be detected as application/pdf
+    b"%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 612 792]\n>>\nendobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000074 00000 n \n0000000120 00000 n \ntrailer\n<<\n/Size 4\n/Root 1 0 R\n>>\nstartxref\n179\n%%EOF".to_vec()
+}
+
+// Sample ZIP header
+fn sample_zip() -> Vec<u8> {
+    // Minimal ZIP file with one text file entry
+    vec![
+        0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, b't', b'e',
+        b's', b't', b'.', b't', b'x', b't', b'h', b'e', b'l', b'l', b'o', 0x50, 0x4B, 0x01,
+        0x02, 0x14, 0x00, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x01, 0x00, 0x00, 0x00, 0x00, b't', b'e', b's',
+        b't', b'.', b't', b'x', b't', 0x50, 0x4B, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x00, 0x01, 0x00, 0x36, 0x00, 0x00, 0x00, 0x2B, 0x00, 0x00, 0x00, 0x00, 0x00
+    ]
 }
 
 #[actix_web::test]
@@ -113,8 +134,153 @@ async fn test_upload_png_ok() {
 
 #[actix_web::test]
 #[serial_test::serial]
-async fn test_upload_unsupported_type() {
+async fn test_upload_text_file_ok() {
     // Using in-memory mock image store; no S3 dependency
+    let url = match std::env::var("DATABASE_URL") {
+        Ok(u) => u,
+        Err(_) => {
+            eprintln!("skipping test_upload_text_file_ok: no DATABASE_URL set");
+            return;
+        }
+    };
+    let pool = match PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .connect(&url)
+        .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("skipping test_upload_text_file_ok: db connect failed: {e}");
+            return;
+        }
+    };
+    let repo = PgRepo::new(pool);
+    let app = test::init_service(
+        App::new()
+            .app_data(actix_web::web::Data::new(AppState {
+                repo: Arc::new(repo),
+                image_store: Arc::new(MockImageStore::default()),
+                rate_limiter: None,
+            }))
+            .configure(config),
+    )
+    .await;
+    let boundary = "BOUNDARY123";
+    let (ct, body) = build_multipart("test.txt", &sample_txt(), boundary);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/images")
+        .insert_header(("Content-Type", ct))
+        .set_payload(body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let bytes = test::read_body(resp).await;
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(v["mime"], "text/plain");
+    assert!(v["hash"].as_str().unwrap().len() == 64);
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn test_upload_pdf_file_ok() {
+    let url = match std::env::var("DATABASE_URL") {
+        Ok(u) => u,
+        Err(_) => {
+            eprintln!("skipping test_upload_pdf_file_ok: no DATABASE_URL set");
+            return;
+        }
+    };
+    let pool = match PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .connect(&url)
+        .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("skipping test_upload_pdf_file_ok: db connect failed: {e}");
+            return;
+        }
+    };
+    let repo = PgRepo::new(pool);
+    let app = test::init_service(
+        App::new()
+            .app_data(actix_web::web::Data::new(AppState {
+                repo: Arc::new(repo),
+                image_store: Arc::new(MockImageStore::default()),
+                rate_limiter: None,
+            }))
+            .configure(config),
+    )
+    .await;
+    let boundary = "PDFBOUNDARY";
+    let (ct, body) = build_multipart("test.pdf", &sample_pdf(), boundary);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/images")
+        .insert_header(("Content-Type", ct))
+        .set_payload(body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let bytes = test::read_body(resp).await;
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(v["mime"], "application/pdf");
+    assert!(v["hash"].as_str().unwrap().len() == 64);
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn test_upload_zip_file_ok() {
+    let url = match std::env::var("DATABASE_URL") {
+        Ok(u) => u,
+        Err(_) => {
+            eprintln!("skipping test_upload_zip_file_ok: no DATABASE_URL set");
+            return;
+        }
+    };
+    let pool = match PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .connect(&url)
+        .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("skipping test_upload_zip_file_ok: db connect failed: {e}");
+            return;
+        }
+    };
+    let repo = PgRepo::new(pool);
+    let app = test::init_service(
+        App::new()
+            .app_data(actix_web::web::Data::new(AppState {
+                repo: Arc::new(repo),
+                image_store: Arc::new(MockImageStore::default()),
+                rate_limiter: None,
+            }))
+            .configure(config),
+    )
+    .await;
+    let boundary = "ZIPBOUNDARY";
+    let (ct, body) = build_multipart("test.zip", &sample_zip(), boundary);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/images")
+        .insert_header(("Content-Type", ct))
+        .set_payload(body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let bytes = test::read_body(resp).await;
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(v["mime"], "application/zip");
+    assert!(v["hash"].as_str().unwrap().len() == 64);
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn test_upload_unsupported_type() {
+    // Test with a file type that's intentionally not in ALLOWED_MIME
     let url = match std::env::var("DATABASE_URL") {
         Ok(u) => u,
         Err(_) => {
@@ -145,8 +311,10 @@ async fn test_upload_unsupported_type() {
             .configure(config),
     )
     .await;
-    let boundary = "BOUNDARYTXT";
-    let (ct, body) = build_multipart("file.txt", &sample_txt(), boundary);
+    // Create a fake executable file that should be rejected
+    let exe_bytes = vec![0x4D, 0x5A, 0x90, 0x00]; // DOS MZ header 
+    let boundary = "EXEBOUNDARY";
+    let (ct, body) = build_multipart("test.exe", &exe_bytes, boundary);
     let req = test::TestRequest::post()
         .uri("/api/v1/images")
         .insert_header(("Content-Type", ct))
@@ -253,8 +421,8 @@ async fn test_upload_size_limit() {
     )
     .await;
     let mut big = sample_png();
-    // Ensure we exceed 10MB limit (10 * 1024 * 1024 + 1)
-    let target = 10 * 1024 * 1024 + 1;
+    // Ensure we exceed 25MB limit (25 * 1024 * 1024 + 1)
+    let target = 25 * 1024 * 1024 + 1;
     big.resize(target, 0xAA);
     let boundary = "BIGN";
     let (ct, body) = build_multipart("big.png", &big, boundary);

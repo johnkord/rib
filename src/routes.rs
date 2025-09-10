@@ -526,30 +526,77 @@ pub async fn create_reply(
 }
 
 #[derive(Debug, serde::Serialize, utoipa::ToSchema)]
-pub struct ImageUploadResponse {
+pub struct FileUploadResponse {
     pub hash: String,
     pub mime: String,
     pub size: usize,
     pub duplicate: bool, // true when upload was a duplicate (idempotent)
 }
 
-const IMAGE_SIZE_LIMIT: usize = 10 * 1024 * 1024; // 10 MB
+const FILE_SIZE_LIMIT: usize = 25 * 1024 * 1024; // 25 MB
 
 const ALLOWED_MIME: &[&str] = &[
+    // Images
     "image/png",
     "image/jpeg",
     "image/gif",
     "image/webp",
+    "image/bmp",
+    "image/tiff",
+    "image/svg+xml",
+    // Videos
     "video/mp4",
     "video/webm",
+    "video/avi",
+    "video/mov",
+    "video/wmv",
+    "video/flv",
+    // Audio
+    "audio/mpeg",
+    "audio/wav",
+    "audio/ogg",
+    "audio/flac",
+    "audio/aac",
+    "audio/m4a",
+    // Documents
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/rtf",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/vnd.oasis.opendocument.presentation",
+    // Plain text and code
+    "text/plain",
+    "text/csv",
+    "text/html",
+    "text/css",
+    "text/javascript",
+    "application/json",
+    "application/xml",
+    "text/xml",
+    "application/yaml",
+    // Archives
+    "application/zip",
+    "application/x-rar-compressed",
+    "application/x-7z-compressed",
+    "application/x-tar",
+    "application/gzip",
+    "application/x-bzip2",
+    // Other common formats
+    "application/octet-stream", // Generic binary
 ];
 
 #[utoipa::path(
     post,
     path = "/api/v1/images",
     responses(
-    (status = 201, description = "Image stored (new)", body = ImageUploadResponse),
-    (status = 200, description = "Image already existed (idempotent)", body = ImageUploadResponse),
+    (status = 201, description = "File stored (new)", body = FileUploadResponse),
+    (status = 200, description = "File already existed (idempotent)", body = FileUploadResponse),
         (status = 415, description = "Unsupported media type"),
         (status = 413, description = "Payload too large"),
     )
@@ -586,7 +633,7 @@ pub async fn upload_image(
             log::error!("stream read error: {e}");
             ApiError::Internal
         })? {
-            if bytes.len() + chunk.len() > IMAGE_SIZE_LIMIT {
+            if bytes.len() + chunk.len() > FILE_SIZE_LIMIT {
                 return Ok(HttpResponse::build(StatusCode::PAYLOAD_TOO_LARGE).finish());
             }
             hasher.update(&chunk);
@@ -610,7 +657,7 @@ pub async fn upload_image(
                 return Err(ApiError::Internal);
             }
         };
-        let resp = ImageUploadResponse {
+        let resp = FileUploadResponse {
             hash,
             mime,
             size: bytes.len(),
