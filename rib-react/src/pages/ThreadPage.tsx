@@ -136,13 +136,11 @@ export function ThreadPage() {
       {/* permalink to this thread */}
       {!thread.isFetching && thread.data && (
         <p className="mb-1 text-sm text-gray-500">
-          Link:&nbsp;
         {user?.role === 'admin' && (
           <label className="flex items-center gap-1 text-xs ml-3">
-            <input type="checkbox" checked={showDeleted} onChange={e=>{ setShowDeleted(e.target.checked); refreshReplies(); }} /> Show deleted
+            <input type="checkbox" checked={showDeleted} onChange={e=>{ setShowDeleted(e.target.checked); refreshReplies(); }} /> Show deleted replies
           </label>
         )}
-          <Link className="link" to={`/thread/${thread.data.id}`}>/thread/{thread.data.id}</Link>
         </p>
       )}
 
