@@ -107,7 +107,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
             .service(
                 web::resource("/admin/replies/{id}")
                     .route(web::delete().to(admin_hard_delete_reply)),
-            ),
+            )
     );
     // Public fetch route (no /api/v1 prefix so <img src="/images/{hash}"> works)
     cfg.route("/images/{hash}", web::get().to(get_image));
@@ -972,6 +972,8 @@ pub async fn auth_me(auth: Auth) -> Result<HttpResponse, ApiError> {
 pub async fn health() -> Result<HttpResponse, ApiError> {
     Ok(HttpResponse::Ok().finish())
 }
+
+// (Removed bandcamp_oembed_proxy)
 
 // ---------------- Bitcoin Proof-of-Value Auth --------------------
 use std::collections::HashMap;

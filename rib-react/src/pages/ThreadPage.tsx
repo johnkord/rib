@@ -172,9 +172,9 @@ export function ThreadPage() {
               <button className="btn btn-xs btn-error" onClick={async()=>{ if(confirm('Hard delete thread permanently?')) { await apiClient.hardDelete('threads', thread.data!.id); window.location.href = '/'; } }}>Hard Delete</button>
             </div>
           )}
-          <p className={`mb-4 whitespace-pre-wrap ${thread.data.deleted_at ? 'opacity-60 line-through' : ''}`}>
+          <div className={`mb-4 whitespace-pre-wrap ${thread.data.deleted_at ? 'opacity-60 line-through' : ''}`}>
             {linkifyText(thread.data.body)}
-          </p>
+          </div>
         </>
       )}
       {/* ------------------------------------------------------------ */}
@@ -240,9 +240,9 @@ export function ThreadPage() {
                     </div>
                   )}
                 </div>
-                <p className={`whitespace-pre-wrap ${deleted ? 'line-through' : ''}`}>
+                <div className={`whitespace-pre-wrap ${deleted ? 'line-through' : ''}`}>
                   {linkifyText(r.content)}
-                </p>
+                </div>
                 {r.image_hash && r.mime?.startsWith('image/') && (
                   <img
                     className="max-w-xs mt-1 cursor-pointer"
