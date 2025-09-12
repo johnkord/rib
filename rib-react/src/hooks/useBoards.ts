@@ -1,12 +1,17 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchJson, postJson, patchJson } from '../lib/api';
 
-export interface Board { id: number; slug: string; title: string; deleted_at?: string | null }
+export interface Board {
+  id: number;
+  slug: string;
+  title: string;
+  deleted_at?: string | null;
+}
 
 export function useBoards(includeDeleted: boolean) {
   return useQuery<Board[]>({
     queryKey: ['boards', includeDeleted],
-    queryFn: () => fetchJson(includeDeleted ? '/boards?include_deleted=1' : '/boards')
+    queryFn: () => fetchJson(includeDeleted ? '/boards?include_deleted=1' : '/boards'),
   });
 }
 

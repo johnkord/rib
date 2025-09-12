@@ -1,9 +1,20 @@
 import { QueryClient } from '@tanstack/react-query';
 import { getAuthToken } from './auth';
 
-export const queryClient = new QueryClient();
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Disable automatic refetching when window gains focus
+      refetchOnWindowFocus: false,
+      // Keep other default behaviors for manual refresh functionality
+      refetchOnMount: true,
+      refetchOnReconnect: true,
+    },
+  },
+});
 
-export const API_BASE = import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? 'http://localhost:8080' : '');
+export const API_BASE =
+  import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? 'http://localhost:8080' : '');
 
 // helper to build versioned API paths (adds /api/v1 if missing)
 function apiUrl(path: string) {
@@ -21,11 +32,11 @@ export async function fetchJson<T>(path: string): Promise<T> {
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
   };
-  
+
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  
+
   const res = await fetch(apiUrl(path), { headers });
   return handle<T>(res);
 }
@@ -35,11 +46,11 @@ export async function postJson<TReq, TRes>(path: string, body: TReq): Promise<TR
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
   };
-  
+
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  
+
   const res = await fetch(apiUrl(path), {
     method: 'POST',
     headers,
@@ -53,11 +64,11 @@ export async function patchJson(path: string, data: any) {
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
   };
-  
+
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  
+
   const res = await fetch(apiUrl(path), {
     method: 'PATCH',
     headers,
@@ -72,12 +83,12 @@ export async function uploadImage(
   const token = getAuthToken();
   const form = new FormData();
   form.append('file', file);
-  
+
   const headers: HeadersInit = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  
+
   const res = await fetch(apiUrl('/images'), {
     method: 'POST',
     body: form,
@@ -100,7 +111,7 @@ export async function uploadImage(
  * in production it stays a relative `/images/{hash}`.
  */
 export function imageUrl(hash: string) {
-  return `${API_BASE}/images/${hash}`;   // public non-versioned route
+  return `${API_BASE}/images/${hash}`; // public non-versioned route
 }
 
 // -------- Bitcoin Auth helpers -----------------------------------
@@ -108,7 +119,10 @@ export async function requestBitcoinChallenge(address: string): Promise<{ challe
   return postJson('/auth/bitcoin/challenge', { address });
 }
 
-export async function verifyBitcoinAddress(address: string, signature: string): Promise<{ token: string }> {
+export async function verifyBitcoinAddress(
+  address: string,
+  signature: string,
+): Promise<{ token: string }> {
   return postJson('/auth/bitcoin/verify', { address, signature });
 }
 // -----------------------------------------------------------------
@@ -129,7 +143,7 @@ export class ApiClient {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ discord_id: discordId, role }),
     });
@@ -140,21 +154,24 @@ export class ApiClient {
     }
   }
 
-  async softDelete(kind: 'boards'|'threads'|'replies', id: number) {
+  async softDelete(kind: 'boards' | 'threads' | 'replies', id: number) {
     await this._moderation(kind, id, 'soft-delete', 'POST');
   }
-  async restore(kind: 'boards'|'threads'|'replies', id: number) {
+  async restore(kind: 'boards' | 'threads' | 'replies', id: number) {
     await this._moderation(kind, id, 'restore', 'POST');
   }
-  async hardDelete(kind: 'boards'|'threads'|'replies', id: number) {
+  async hardDelete(kind: 'boards' | 'threads' | 'replies', id: number) {
     await this._moderation(kind, id, '', 'DELETE');
   }
 
-  private async _moderation(kind: string, id: number, action: string, method: 'POST'|'DELETE') {
+  private async _moderation(kind: string, id: number, action: string, method: 'POST' | 'DELETE') {
     const token = getAuthToken();
     if (!token) throw new Error('Not authenticated');
     const path = action ? `/admin/${kind}/${id}/${action}` : `/admin/${kind}/${id}`;
-    const res = await fetch(apiUrl(path), { method, headers: { 'Authorization': `Bearer ${token}` }});
+    const res = await fetch(apiUrl(path), {
+      method,
+      headers: { Authorization: `Bearer ${token}` },
+    });
     if (!res.ok) throw new Error(await res.text());
   }
 }

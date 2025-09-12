@@ -8,7 +8,7 @@ export interface Thread {
   board_id: number;
   reply_count: number;
   created_at: string;
-  bump_time:  string;
+  bump_time: string;
   image_hash?: string;
   mime?: string;
   deleted_at?: string | null;
@@ -18,7 +18,8 @@ export interface Thread {
 export function useThreads(boardId: number | null, includeDeleted: boolean) {
   return useQuery<Thread[]>({
     queryKey: ['threads', boardId, includeDeleted],
-    queryFn: () => fetchJson(`/boards/${boardId}/threads${includeDeleted ? '?include_deleted=1' : ''}`),
+    queryFn: () =>
+      fetchJson(`/boards/${boardId}/threads${includeDeleted ? '?include_deleted=1' : ''}`),
     enabled: !!boardId,
   });
 }
@@ -35,7 +36,14 @@ export function useCreateThread() {
       mime = up.mime;
     }
 
-  await postJson('/threads', { board_id: boardId, subject, body, image_hash, mime, created_by: '' }); // Added created_by
+    await postJson('/threads', {
+      board_id: boardId,
+      subject,
+      body,
+      image_hash,
+      mime,
+      created_by: '',
+    }); // Added created_by
     await qc.invalidateQueries({ queryKey: ['threads', boardId] });
   };
 }

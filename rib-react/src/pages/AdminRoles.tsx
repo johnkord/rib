@@ -8,21 +8,32 @@ export function AdminRoles() {
   const [selectedRole, setSelectedRole] = useState('user');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [roles, setRoles] = useState<Array<{subject:string; role:string}>>([]);
+  const [roles, setRoles] = useState<Array<{ subject: string; role: string }>>([]);
   const [loading, setLoading] = useState(false);
 
   async function loadRoles() {
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/admin/roles', { headers: { 'Authorization': `Bearer ${localStorage.getItem('rib_auth_token')}` }});
+      const res = await fetch('/api/v1/admin/roles', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('rib_auth_token')}` },
+      });
       if (res.ok) {
         setRoles(await res.json());
-      } else { setError(await res.text()); }
-    } catch(e:any) { setError(e.message); }
-    finally { setLoading(false); }
+      } else {
+        setError(await res.text());
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  useEffect(()=>{ if (user?.role==='admin') { loadRoles(); } }, [user]);
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      loadRoles();
+    }
+  }, [user]);
 
   // Only admins can access this page
   if (!user || user.role !== 'admin') {
@@ -53,15 +64,25 @@ export function AdminRoles() {
   const deleteRole = async (subj: string) => {
     if (!confirm(`Delete role assignment for ${subj}?`)) return;
     try {
-      const res = await fetch(`/api/v1/admin/roles/${encodeURIComponent(subj)}`, { method:'DELETE', headers:{ 'Authorization': `Bearer ${localStorage.getItem('rib_auth_token')}` }});
-      if (res.status===204) { setMessage(`Deleted ${subj}`); loadRoles(); } else { setError(await res.text()); }
-    } catch(e:any) { setError(e.message); }
+      const res = await fetch(`/api/v1/admin/roles/${encodeURIComponent(subj)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${localStorage.getItem('rib_auth_token')}` },
+      });
+      if (res.status === 204) {
+        setMessage(`Deleted ${subj}`);
+        loadRoles();
+      } else {
+        setError(await res.text());
+      }
+    } catch (e: any) {
+      setError(e.message);
+    }
   };
 
   return (
     <div className="container mx-auto p-4">
-  <h1 className="text-2xl font-bold mb-6">Role Management</h1>
-      
+      <h1 className="text-2xl font-bold mb-6">Role Management</h1>
+
       <div className="max-w-md">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -78,7 +99,8 @@ export function AdminRoles() {
               required
             />
             <p className="text-xs text-gray-500 mt-1 space-y-1">
-              <span>Format: &lt;provider&gt;:&lt;identifier&gt;</span><br/>
+              <span>Format: &lt;provider&gt;:&lt;identifier&gt;</span>
+              <br />
               <span>Examples: discord:123456789012345678, btc:1A1zP1...</span>
             </p>
           </div>
@@ -107,17 +129,9 @@ export function AdminRoles() {
           </button>
         </form>
 
-        {message && (
-          <div className="mt-4 p-3 bg-green-100 text-green-700 rounded">
-            {message}
-          </div>
-        )}
+        {message && <div className="mt-4 p-3 bg-green-100 text-green-700 rounded">{message}</div>}
 
-        {error && (
-          <div className="mt-4 p-3 bg-red-100 text-red-700 rounded">
-            {error}
-          </div>
-        )}
+        {error && <div className="mt-4 p-3 bg-red-100 text-red-700 rounded">{error}</div>}
       </div>
 
       <div className="mt-8 p-4 bg-gray-100 rounded">
@@ -132,22 +146,39 @@ export function AdminRoles() {
       <div className="mt-10">
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-semibold">Existing Assignments</h2>
-          <button className="btn btn-xs" onClick={loadRoles} disabled={loading}>{loading? 'Refreshing...' : 'Refresh'}</button>
+          <button className="btn btn-xs" onClick={loadRoles} disabled={loading}>
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
         </div>
-        {roles.length===0 && <div className="text-xs text-gray-500">No assignments yet.</div>}
+        {roles.length === 0 && <div className="text-xs text-gray-500">No assignments yet.</div>}
         <div className="overflow-x-auto">
           <table className="table table-zebra table-xs w-full">
             <thead>
-              <tr><th>Subject</th><th>Role</th><th>Actions</th></tr>
+              <tr>
+                <th>Subject</th>
+                <th>Role</th>
+                <th>Actions</th>
+              </tr>
             </thead>
             <tbody>
-              {roles.map(r => (
+              {roles.map((r) => (
                 <tr key={r.subject}>
                   <td className="font-mono text-[11px]">{r.subject}</td>
                   <td>{r.role}</td>
                   <td className="space-x-2">
-                    <button className="btn btn-ghost btn-xs" onClick={()=>{ setSubject(r.subject); setSelectedRole(r.role); window.scrollTo({top:0, behavior:'smooth'}); }}>Edit</button>
-                    <button className="btn btn-error btn-xs" onClick={()=>deleteRole(r.subject)}>Delete</button>
+                    <button
+                      className="btn btn-ghost btn-xs"
+                      onClick={() => {
+                        setSubject(r.subject);
+                        setSelectedRole(r.role);
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button className="btn btn-error btn-xs" onClick={() => deleteRole(r.subject)}>
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}

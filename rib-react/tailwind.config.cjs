@@ -1,6 +1,6 @@
 /***** Tailwind config *****/
 module.exports = {
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: { extend: {} },
   plugins: [require('daisyui')],
 };

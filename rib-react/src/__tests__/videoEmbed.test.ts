@@ -12,7 +12,9 @@ describe('extractYouTubeId', () => {
     const embed = detectVideoEmbed('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
     expect(embed).not.toBeNull();
     if (embed) {
-      const el = createVideoEmbed(embed, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', { widthClass: 'max-w-sm' });
+      const el = createVideoEmbed(embed, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', {
+        widthClass: 'max-w-sm',
+      });
       const iframe = (el.props.children as any[]).find((c: any) => c.type === 'iframe');
       expect(iframe.props.className).toContain('max-w-sm');
     }
@@ -28,8 +30,14 @@ describe('extractYouTubeId', () => {
   });
 
   it('should extract ID from URLs with additional parameters', () => {
-    expect(extractYouTubeId('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=30s')).toBe('dQw4w9WgXcQ');
-    expect(extractYouTubeId('https://www.youtube.com/watch?list=PLrAXtmRdnEQy8M2gEBz2NQpSYHKGz9E3M&v=dQw4w9WgXcQ')).toBe('dQw4w9WgXcQ');
+    expect(extractYouTubeId('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=30s')).toBe(
+      'dQw4w9WgXcQ',
+    );
+    expect(
+      extractYouTubeId(
+        'https://www.youtube.com/watch?list=PLrAXtmRdnEQy8M2gEBz2NQpSYHKGz9E3M&v=dQw4w9WgXcQ',
+      ),
+    ).toBe('dQw4w9WgXcQ');
   });
 
   it('should return null for non-YouTube URLs', () => {
@@ -52,7 +60,7 @@ describe('detectVideoEmbed', () => {
       type: 'youtube',
       videoId: 'dQw4w9WgXcQ',
       embedUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-      thumbnailUrl: 'https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg'
+      thumbnailUrl: 'https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg',
     });
   });
 
@@ -64,9 +72,9 @@ describe('detectVideoEmbed', () => {
       // container div children
       const iframe = (el.props.children as any[]).find((c: any) => c.type === 'iframe');
       expect(iframe.props.sandbox).toBeUndefined();
-  // Trimmed allow list: ensure expected subset still present
-  expect(iframe.props.allow).toContain('autoplay');
-  expect(iframe.props.allow).not.toContain('web-share');
+      // Trimmed allow list: ensure expected subset still present
+      expect(iframe.props.allow).toContain('autoplay');
+      expect(iframe.props.allow).not.toContain('web-share');
       expect(iframe.props.referrerPolicy).toBe('strict-origin-when-cross-origin');
     }
   });
