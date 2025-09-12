@@ -16,7 +16,10 @@ const URL_REGEX = /(https?:\/\/[^\s]+)/gi;
  * Toggle component (defined once per linkifyText call) that reveals the iframe on demand.
  */
 const makeVideoToggle = (videoMaxWidthClass?: string) => {
-  const VideoToggle: React.FC<{ embed: VideoEmbed; originalUrl: string }> = ({ embed, originalUrl }) => {
+  const VideoToggle: React.FC<{ embed: VideoEmbed; originalUrl: string }> = ({
+    embed,
+    originalUrl,
+  }) => {
     const [show, setShow] = useState(false);
     if (show) {
       return createVideoEmbed(embed, originalUrl, { widthClass: videoMaxWidthClass });
@@ -30,20 +33,28 @@ const makeVideoToggle = (videoMaxWidthClass?: string) => {
         'data-original-url': originalUrl,
       } as any,
       [
-        React.createElement('a', {
-          key: 'lnk',
-          href: originalUrl,
-          target: '_blank',
-          rel: 'noopener noreferrer',
-          className: 'text-blue-600 hover:text-blue-800 underline break-all'
-        }, originalUrl),
-        React.createElement('button', {
-          key: 'btn',
-          type: 'button',
+        React.createElement(
+          'a',
+          {
+            key: 'lnk',
+            href: originalUrl,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            className: 'text-blue-600 hover:text-blue-800 underline break-all',
+          },
+          originalUrl,
+        ),
+        React.createElement(
+          'button',
+          {
+            key: 'btn',
+            type: 'button',
             className: 'text-xs text-blue-600 hover:text-blue-800 underline',
-          onClick: () => setShow(true)
-        }, '[Embed]')
-      ]
+            onClick: () => setShow(true),
+          },
+          '[Embed]',
+        ),
+      ],
     );
   };
   return VideoToggle;
@@ -83,19 +94,27 @@ export function linkifyText(text: string, options?: boolean | LinkifyOptions): R
     const videoEmbed = enableVideoEmbeds ? detectVideoEmbed(url) : null;
 
     if (videoEmbed && VideoToggle) {
-      parts.push(React.createElement(VideoToggle, { key: `video-${matchIndex}`, embed: videoEmbed, originalUrl: url }));
+      parts.push(
+        React.createElement(VideoToggle, {
+          key: `video-${matchIndex}`,
+          embed: videoEmbed,
+          originalUrl: url,
+        }),
+      );
     } else {
-      parts.push(React.createElement(
-        'a',
-        {
-          key: `link-${matchIndex}`,
-          href: url,
-          target: '_blank',
-          rel: 'noopener noreferrer',
-          className: 'text-blue-600 hover:text-blue-800 underline break-all'
-        },
-        url
-      ));
+      parts.push(
+        React.createElement(
+          'a',
+          {
+            key: `link-${matchIndex}`,
+            href: url,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            className: 'text-blue-600 hover:text-blue-800 underline break-all',
+          },
+          url,
+        ),
+      );
     }
 
     lastIndex = matchIndex + url.length;

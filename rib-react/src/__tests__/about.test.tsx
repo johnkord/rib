@@ -7,8 +7,8 @@ describe('About (About) page', () => {
     render(<About />);
     expect(screen.getByText(/About/)).toBeTruthy();
     expect(screen.getAllByText(/John Kordich/).length).toBeGreaterThan(0);
-  expect(screen.getByText(/jkordich/)).toBeTruthy();
-  expect(screen.getAllByText(/curlyquote/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/jkordich/)).toBeTruthy();
+    expect(screen.getAllByText(/curlyquote/).length).toBeGreaterThan(0);
     expect(screen.getByText(/bc1qlawxetusaugute86w3yc8m72xggak5lkjgqd2p/)).toBeTruthy();
     expect(screen.getByText(/github.com\/johnkord\/rib/)).toBeTruthy();
   });

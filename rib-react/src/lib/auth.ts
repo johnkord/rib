@@ -16,23 +16,34 @@ export function getCurrentUser(): User | null {
 let current: User | null = getCurrentUser();
 const listeners = new Set<(u: User | null) => void>();
 
-function emit() { listeners.forEach((l) => l(current)); }
+function emit() {
+  listeners.forEach((l) => l(current));
+}
 
 export function subscribe(listener: (u: User | null) => void) {
-  listeners.add(listener); listener(current); return () => listeners.delete(listener);
+  listeners.add(listener);
+  listener(current);
+  return () => listeners.delete(listener);
 }
 
 function persist() {
   if (typeof localStorage === 'undefined') return;
-  if (current) localStorage.setItem(storeKey, JSON.stringify(current)); else localStorage.removeItem(storeKey);
+  if (current) localStorage.setItem(storeKey, JSON.stringify(current));
+  else localStorage.removeItem(storeKey);
 }
 
 export async function login(username: string, _password: string) {
   current = { username, role: 'moderator', token: 'dev-token' }; // placeholder
-  persist(); emit(); return current;
+  persist();
+  emit();
+  return current;
 }
 
-export function logout() { current = null; persist(); emit(); }
+export function logout() {
+  current = null;
+  persist();
+  emit();
+}
 
 export function setAuthToken(token: string): void {
   localStorage.setItem(AUTH_TOKEN_KEY, token);

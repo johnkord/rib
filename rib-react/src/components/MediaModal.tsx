@@ -12,9 +12,14 @@ interface Props {
 }
 
 export default function MediaModal({
-  hash, mime, onClose, onPrev, onNext, hasPrev, hasNext,
+  hash,
+  mime,
+  onClose,
+  onPrev,
+  onNext,
+  hasPrev,
+  hasNext,
 }: Props) {
-
   // key-handling ------------------------------------------------------
   useEffect(() => {
     function handler(e: KeyboardEvent) {
@@ -33,15 +38,31 @@ export default function MediaModal({
       onClick={onClose}
     >
       {/* prev / next click-zones -------------------------------------- */}
-      {hasPrev && <div className="absolute left-0 top-0 h-full w-1/4 cursor-pointer" onClick={(e)=>{e.stopPropagation(); onPrev?.();}} />}
-      {hasNext && <div className="absolute right-0 top-0 h-full w-1/4 cursor-pointer" onClick={(e)=>{e.stopPropagation(); onNext?.();}} />}
+      {hasPrev && (
+        <div
+          className="absolute left-0 top-0 h-full w-1/4 cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            onPrev?.();
+          }}
+        />
+      )}
+      {hasNext && (
+        <div
+          className="absolute right-0 top-0 h-full w-1/4 cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            onNext?.();
+          }}
+        />
+      )}
       {/* -------------------------------------------------------------- */}
 
       {mime?.startsWith('image/') && (
         <img
           className="max-w-full max-h-full"
           src={imageUrl(hash)}
-          onClick={e => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         />
       )}
       {mime?.startsWith('video/') && (
@@ -50,7 +71,7 @@ export default function MediaModal({
           controls
           autoPlay
           src={imageUrl(hash)}
-          onClick={e => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         />
       )}
     </div>
