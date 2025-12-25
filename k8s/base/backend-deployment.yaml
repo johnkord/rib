@@ -21,7 +21,7 @@ metadata:
   labels:
     app: rib-backend
 spec:
-  replicas: 2
+  replicas: 1
   revisionHistoryLimit: 2
   selector:
     matchLabels:
@@ -85,7 +85,7 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: rib-backend
-  minReplicas: 2
+  minReplicas: 1
   maxReplicas: 10
   metrics:
     - type: Resource
