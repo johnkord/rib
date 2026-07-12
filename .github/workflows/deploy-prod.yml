@@ -225,10 +225,7 @@ jobs:
         run: |
           set -euo pipefail
           manifest=/tmp/rib-aks.yaml
-          kubectl kustomize k8s/overlays/aks > "$manifest"
-          image_lines=$(grep -Ec '^[[:space:]]+image: .*/rib:[^[:space:]]+$' "$manifest")
-          test "$image_lines" -eq 1
-          sed -Ei "s#^([[:space:]]+image: ).*/rib:[^[:space:]]+$#\1$ACR_LOGIN_SERVER/rib:$SHORT_SHA#" "$manifest"
+          bash scripts/render-aks-manifest.sh "$ACR_LOGIN_SERVER/rib:$SHORT_SHA" > "$manifest"
           grep -F "image: $ACR_LOGIN_SERVER/rib:$SHORT_SHA" "$manifest"
           kubectl apply -f "$manifest"
           # Quick visibility of the resulting deployment spec & image

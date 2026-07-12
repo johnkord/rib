@@ -120,5 +120,9 @@ jobs:
             test "$max_replicas" = "1"
             test "$strategy" = "Recreate"
           done
+          release_output=/tmp/rib-aks-release.yaml
+          bash scripts/render-aks-manifest.sh example.invalid/rib:ci > "$release_output"
+          test "$(grep -Fc 'image: example.invalid/rib:ci' "$release_output")" -eq 1
+          kubectl apply --dry-run=client -f "$release_output" >/dev/null
       - name: Build Bicep template
         run: az bicep build --file infra/bicep/main.bicep --stdout >/dev/null
