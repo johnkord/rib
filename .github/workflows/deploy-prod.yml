@@ -193,64 +193,33 @@ jobs:
       - name: Preflight pending migration data
         run: |
           set -euo pipefail
-          cleanup() {
-            kubectl -n rib delete job rib-migration-preflight --ignore-not-found >/dev/null
-          }
-          trap cleanup EXIT
-          cleanup
-          cat <<'YAML' | kubectl apply -f -
-          apiVersion: batch/v1
-          kind: Job
-          metadata:
-            name: rib-migration-preflight
-            namespace: rib
-          spec:
-            backoffLimit: 0
-            ttlSecondsAfterFinished: 300
-            template:
-              spec:
-                restartPolicy: Never
-                containers:
-                  - name: postgres
-                    image: postgres:16-alpine
-                    envFrom:
-                      - secretRef:
-                          name: rib-secrets
-                    command: ["sh", "-ec"]
-                    args:
-                      - |
-                        psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
-                        DO $$
-                        BEGIN
-                          IF EXISTS (SELECT 1 FROM images WHERE (thread_id IS NULL) = (reply_id IS NULL)) THEN
-                            RAISE EXCEPTION 'images must have exactly one owner';
-                          END IF;
-                          IF EXISTS (SELECT 1 FROM images WHERE hash !~ '^[0-9a-f]{64}$') THEN
-                            RAISE EXCEPTION 'invalid image hash';
-                          END IF;
-                          IF EXISTS (SELECT 1 FROM images WHERE thread_id IS NOT NULL GROUP BY thread_id HAVING count(*) > 1) THEN
-                            RAISE EXCEPTION 'multiple images reference one thread';
-                          END IF;
-                          IF EXISTS (SELECT 1 FROM images WHERE reply_id IS NOT NULL GROUP BY reply_id HAVING count(*) > 1) THEN
-                            RAISE EXCEPTION 'multiple images reference one reply';
-                          END IF;
-                          IF EXISTS (SELECT 1 FROM boards WHERE slug !~ '^[a-z0-9_-]{1,64}$' OR char_length(title) NOT BETWEEN 1 AND 100) THEN
-                            RAISE EXCEPTION 'invalid board fields';
-                          END IF;
-                          IF EXISTS (SELECT 1 FROM threads WHERE char_length(subject) NOT BETWEEN 1 AND 200 OR char_length(body) > 2000) THEN
-                            RAISE EXCEPTION 'invalid thread fields';
-                          END IF;
-                          IF EXISTS (SELECT 1 FROM replies WHERE char_length(content) > 2000) THEN
-                            RAISE EXCEPTION 'invalid reply fields';
-                          END IF;
-                        END $$;
-                        SQL
-          YAML
-          kubectl -n rib wait --for=condition=complete job/rib-migration-preflight --timeout=120s || {
-            kubectl -n rib logs job/rib-migration-preflight
-            exit 1
-          }
-          kubectl -n rib logs job/rib-migration-preflight
+          kubectl -n rib exec -i postgres-aks-0 -- \
+            psql -U postgres -d rib -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF EXISTS (SELECT 1 FROM images WHERE (thread_id IS NULL) = (reply_id IS NULL)) THEN
+              RAISE EXCEPTION 'images must have exactly one owner';
+            END IF;
+            IF EXISTS (SELECT 1 FROM images WHERE hash !~ '^[0-9a-f]{64}$') THEN
+              RAISE EXCEPTION 'invalid image hash';
+            END IF;
+            IF EXISTS (SELECT 1 FROM images WHERE thread_id IS NOT NULL GROUP BY thread_id HAVING count(*) > 1) THEN
+              RAISE EXCEPTION 'multiple images reference one thread';
+            END IF;
+            IF EXISTS (SELECT 1 FROM images WHERE reply_id IS NOT NULL GROUP BY reply_id HAVING count(*) > 1) THEN
+              RAISE EXCEPTION 'multiple images reference one reply';
+            END IF;
+            IF EXISTS (SELECT 1 FROM boards WHERE slug !~ '^[a-z0-9_-]{1,64}$' OR char_length(title) NOT BETWEEN 1 AND 100) THEN
+              RAISE EXCEPTION 'invalid board fields';
+            END IF;
+            IF EXISTS (SELECT 1 FROM threads WHERE char_length(subject) NOT BETWEEN 1 AND 200 OR char_length(body) > 2000) THEN
+              RAISE EXCEPTION 'invalid thread fields';
+            END IF;
+            IF EXISTS (SELECT 1 FROM replies WHERE char_length(content) > 2000) THEN
+              RAISE EXCEPTION 'invalid reply fields';
+            END IF;
+          END $$;
+          SQL
 
       - name: Deploy with Kustomize
         run: |
