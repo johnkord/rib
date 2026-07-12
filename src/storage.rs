@@ -28,6 +28,20 @@ pub fn is_valid_content_hash(hash: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
+fn resolve_content_type(content_type: Option<&str>, bytes: &[u8]) -> String {
+    content_type
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_owned)
+        .or_else(|| infer::get(bytes).map(|kind| kind.mime_type().to_string()))
+        .unwrap_or_else(|| {
+            if std::str::from_utf8(bytes).is_ok() && !bytes.contains(&0) {
+                "text/plain".to_string()
+            } else {
+                "application/octet-stream".to_string()
+            }
+        })
+}
+
 // ---------------- S3 Implementation (MinIO compatible; ONLY supported backend) ----------------
 pub struct S3ImageStore {
     bucket: String,
@@ -114,7 +128,7 @@ impl S3ImageStore {
 
 #[async_trait]
 impl ImageStore for S3ImageStore {
-    async fn save(&self, hash: &str, _mime: &str, bytes: &[u8]) -> Result<(), ImageStoreError> {
+    async fn save(&self, hash: &str, mime: &str, bytes: &[u8]) -> Result<(), ImageStoreError> {
         use aws_sdk_s3::primitives::ByteStream;
         let key = self.key_for(hash)?;
         // Attempt HEAD to detect duplicate
@@ -135,12 +149,7 @@ impl ImageStore for S3ImageStore {
             .bucket(&self.bucket)
             .key(&key)
             .body(ByteStream::from(bytes.to_vec()))
-            // Best-effort content type detection (helps when serving directly from S3/MinIO)
-            .content_type(
-                infer::get(bytes)
-                    .map(|t| t.mime_type().to_string())
-                    .unwrap_or_else(|| "application/octet-stream".into()),
-            );
+            .content_type(mime);
         if let Err(e) = put.send().await {
             // Log full debug (including SDK classification) but return concise error upstream
             error!(
@@ -169,16 +178,14 @@ impl ImageStore for S3ImageStore {
             .send()
             .await
             .map_err(|_| ImageStoreError::NotFound)?;
+        let content_type = obj.content_type().map(str::to_owned);
         let data = obj
             .body
             .collect()
             .await
             .map_err(|e| ImageStoreError::Other(e.to_string()))?;
-        // ContentType may be None; fallback by sniffing
         let bytes = Vec::from(data.into_bytes().as_ref());
-        let mime = infer::get(&bytes)
-            .map(|t| t.mime_type().to_string())
-            .unwrap_or_else(|| "application/octet-stream".into());
+        let mime = resolve_content_type(content_type.as_deref(), &bytes);
         Ok((bytes, mime))
     }
     async fn delete(&self, hash: &str) -> Result<(), ImageStoreError> {
@@ -203,3 +210,25 @@ pub async fn build_image_store() -> Arc<dyn ImageStore> {
 }
 
 // (Re-export removed; tests use their own mock implementation.)
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_content_type;
+
+    #[test]
+    fn content_type_prefers_stored_metadata() {
+        assert_eq!(
+            resolve_content_type(Some("text/plain"), b"release validation"),
+            "text/plain"
+        );
+    }
+
+    #[test]
+    fn content_type_falls_back_to_byte_detection() {
+        assert_eq!(resolve_content_type(None, b"plain text"), "text/plain");
+        assert_eq!(
+            resolve_content_type(None, b"binary\0data"),
+            "application/octet-stream"
+        );
+    }
+}
