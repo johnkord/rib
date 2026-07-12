@@ -31,6 +31,8 @@ export function BoardThreadsPage() {
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [authorName, setAuthorName] = useState('');
+  const [tripcodePassword, setTripcodePassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [viewer, setViewer] = useState<{ hash: string; mime: string | null } | null>(null);
@@ -55,12 +57,20 @@ export function BoardThreadsPage() {
     try {
       setSubmitting(true);
       setError(null);
-      await createThread(boardId, subject.trim(), body.trim(), file);
+      await createThread(
+        boardId,
+        subject.trim(),
+        body.trim(),
+        file,
+        authorName.trim(),
+        tripcodePassword,
+      );
       setSubject('');
       setBody('');
       setFile(null); // clear
-    } catch (err: any) {
-      setError(err.message);
+      setTripcodePassword('');
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'Failed to create thread');
     } finally {
       setSubmitting(false);
     }
@@ -113,7 +123,7 @@ export function BoardThreadsPage() {
             </label>
           )}
         </div>
-        {board && !editing && (
+        {board && !editing && user?.role === 'admin' && (
           <button
             className="btn btn-sm"
             onClick={() => {
@@ -156,30 +166,53 @@ export function BoardThreadsPage() {
       {/* ----------------------------------------------------------- */}
 
       {/* new thread form ------------------------------------------ */}
-      <form className="mb-6 space-y-2" onSubmit={onSubmit}>
-        <input
-          className="input input-bordered w-full"
-          placeholder="New thread subject"
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-        />
-        <textarea
-          className="textarea textarea-bordered w-full"
-          rows={4}
-          placeholder="Body"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-        />
-        <input
-          type="file"
-          accept="image/*,video/*" // was images only
-          onChange={onFileChange}
-        />
-        {error && <p className="text-red-600 text-sm">{error}</p>}
-        <button className="btn btn-primary" disabled={submitting}>
-          {submitting ? 'Posting…' : 'Post Thread'}
-        </button>
-      </form>
+      {user ? (
+        <form className="mb-6 space-y-2" onSubmit={onSubmit}>
+          <input
+            className="input input-bordered w-full"
+            placeholder="New thread subject"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+          />
+          <textarea
+            className="textarea textarea-bordered w-full"
+            rows={4}
+            placeholder="Body"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+          />
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input
+              className="input input-bordered input-sm w-full"
+              placeholder="Name (optional)"
+              maxLength={40}
+              value={authorName}
+              onChange={(event) => setAuthorName(event.target.value)}
+            />
+            <input
+              className="input input-bordered input-sm w-full"
+              type="password"
+              autoComplete="off"
+              placeholder="Tripcode password (optional)"
+              minLength={4}
+              maxLength={128}
+              value={tripcodePassword}
+              onChange={(event) => setTripcodePassword(event.target.value)}
+            />
+          </div>
+          <input type="file" onChange={onFileChange} />
+          {error && <p className="text-red-600 text-sm">{error}</p>}
+          <button className="btn btn-primary" disabled={submitting}>
+            {submitting ? 'Posting…' : 'Post Thread'}
+          </button>
+        </form>
+      ) : (
+        <p className="mb-6 text-sm">
+          <Link className="link" to="/login">
+            Sign in to create a thread.
+          </Link>
+        </p>
+      )}
       {/* ----------------------------------------------------------- */}
 
       <ul>
@@ -194,6 +227,11 @@ export function BoardThreadsPage() {
               <Link className="link font-medium" to={`/thread/${t.id}`}>
                 {t.subject}
               </Link>
+              {(t.author_name || t.tripcode) && (
+                <span className="text-xs font-mono">
+                  {t.author_name || 'Anonymous'} {t.tripcode}
+                </span>
+              )}
               {t.deleted_at && <span className="badge badge-error badge-sm">Deleted</span>}
               <span className="ml-2 text-xs text-gray-500">
                 (last {new Date(t.bump_time).toLocaleString()}, created{' '}
@@ -207,13 +245,18 @@ export function BoardThreadsPage() {
                     alt=""
                     onClick={() => setViewer({ hash: t.image_hash!, mime: t.mime ?? null })}
                   />
-                ) : (
-                  <span
-                    className="ml-2 cursor-pointer"
+                ) : t.mime?.startsWith('video/') ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
                     onClick={() => setViewer({ hash: t.image_hash!, mime: t.mime ?? null })}
                   >
-                    📹
-                  </span>
+                    Video
+                  </button>
+                ) : (
+                  <a className="link text-xs" href={imageUrl(t.image_hash)}>
+                    Download file
+                  </a>
                 ))}
               {user && (user.role === 'admin' || user.role === 'moderator') && (
                 <div className="flex items-center gap-1 ml-2">

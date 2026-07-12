@@ -17,4 +17,14 @@ patches:
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 3
+        value: 1
+  - target:
+      kind: ConfigMap
+      name: rib-config
+    patch: |-
+      - op: replace
+        path: /data/ENABLE_HSTS
+        value: "true"
+      - op: replace
+        path: /data/S3_ENDPOINT
+        value: http://minio-prod:9000

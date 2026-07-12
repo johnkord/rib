@@ -29,8 +29,10 @@ pub struct Thread {
     pub bump_time: DateTime<Utc>,
     pub image_hash: Option<String>,
     pub mime: Option<String>,
+    pub author_name: Option<String>,
+    pub tripcode: Option<String>,
     pub deleted_at: Option<DateTime<Utc>>, // soft delete marker
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing, default)]
     #[schema(skip)]
     #[allow(dead_code)]
     pub created_by: Value, // internal author attribution JSON (hidden from API clients)
@@ -43,6 +45,10 @@ pub struct NewThread {
     pub body: String,
     pub image_hash: Option<String>,
     pub mime: Option<String>,
+    #[serde(default)]
+    pub author_name: Option<String>,
+    #[serde(default)]
+    pub tripcode_password: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 pub struct Reply {
@@ -51,9 +57,11 @@ pub struct Reply {
     pub content: String,
     pub image_hash: Option<String>,
     pub mime: Option<String>,
+    pub author_name: Option<String>,
+    pub tripcode: Option<String>,
     pub created_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>, // soft delete marker
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing, default)]
     #[schema(skip)]
     #[allow(dead_code)]
     pub created_by: Value, // internal author attribution JSON (hidden)
@@ -64,6 +72,16 @@ pub struct NewReply {
     pub content: String,
     pub image_hash: Option<String>,
     pub mime: Option<String>,
+    #[serde(default)]
+    pub author_name: Option<String>,
+    #[serde(default)]
+    pub tripcode_password: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PublicIdentity {
+    pub author_name: Option<String>,
+    pub tripcode: Option<String>,
 }
 // Placeholders for future features
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
@@ -80,6 +98,22 @@ pub struct Report {
     pub target_id: Id,
     pub reason: String,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+pub struct SubjectBan {
+    pub subject: String,
+    pub reason: String,
+    pub banned_by: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct NewSubjectBan {
+    pub subject: String,
+    pub reason: String,
+    pub expires_at: Option<DateTime<Utc>>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 pub struct UpdateBoard {

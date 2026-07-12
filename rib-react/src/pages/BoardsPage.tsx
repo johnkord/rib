@@ -2,6 +2,7 @@ import { FormEvent, useState, useEffect } from 'react';
 import { useBoards, useCreateBoard } from '../hooks/useBoards';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { apiClient } from '../lib/api';
 
 export function BoardsPage() {
   const { user } = useAuth();
@@ -34,8 +35,8 @@ export function BoardsPage() {
       refetch();
       setSlug('');
       setTitle('');
-    } catch (err: any) {
-      setError(err.message);
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'Failed to create board');
     } finally {
       setSubmitting(false);
     }
@@ -103,7 +104,7 @@ export function BoardsPage() {
                     <button
                       className="btn btn-ghost btn-xs"
                       onClick={async () => {
-                        await (await import('../lib/api')).apiClient.softDelete('boards', b.id);
+                        await apiClient.softDelete('boards', b.id);
                         refetch();
                       }}
                     >
@@ -114,7 +115,7 @@ export function BoardsPage() {
                     <button
                       className="btn btn-ghost btn-xs"
                       onClick={async () => {
-                        await (await import('../lib/api')).apiClient.restore('boards', b.id);
+                        await apiClient.restore('boards', b.id);
                         refetch();
                       }}
                     >
@@ -125,7 +126,7 @@ export function BoardsPage() {
                     className="btn btn-ghost btn-xs text-error"
                     onClick={async () => {
                       if (confirm('Hard delete board and all threads?')) {
-                        await (await import('../lib/api')).apiClient.hardDelete('boards', b.id);
+                        await apiClient.hardDelete('boards', b.id);
                         refetch();
                       }
                     }}

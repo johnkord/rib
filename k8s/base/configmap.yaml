@@ -10,12 +10,14 @@ data:
   RUST_LOG: "info"
   # Use public domain for redirects (frontend embedded in backend)
   FRONTEND_URL: "https://rib.curlyquote.com"
-  # Cluster service name uses '-aks' suffix; update endpoint accordingly
-  S3_ENDPOINT: "http://minio-aks:9000"
+  S3_ENDPOINT: "http://minio:9000"
   S3_BUCKET: "rib-images"
   S3_REGION: "us-east-1"
   ENABLE_HSTS: "false"
+  RL_ENABLED: "true"
+  TRUST_PROXY_HEADERS: "true"
+  TRUSTED_PROXY_HOPS: "0"
   # Default redirect URI (server overrides per secret/env in prod). Kept for local dev override.
   DISCORD_REDIRECT_URI: "https://rib.curlyquote.com/api/v1/auth/discord/callback"
   # Bootstrap admin Discord IDs (comma separated). Ensures these users receive Admin role on login.
-  BOOTSTRAP_ADMIN_DISCORD_IDS: "188880431955968000"
+  BOOTSTRAP_ADMIN_DISCORD_IDS: "188880431955968000" # gitleaks:allow - public bootstrap Discord ID

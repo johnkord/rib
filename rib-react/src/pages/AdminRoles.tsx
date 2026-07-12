@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { getAuthToken } from '../lib/auth';
 import { postJson } from '../lib/api';
+
+function requestHeaders(): HeadersInit {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 export function AdminRoles() {
   const { user } = useAuth();
@@ -15,15 +21,16 @@ export function AdminRoles() {
     setLoading(true);
     try {
       const res = await fetch('/api/v1/admin/roles', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('rib_auth_token')}` },
+        headers: requestHeaders(),
+        credentials: 'include',
       });
       if (res.ok) {
         setRoles(await res.json());
       } else {
         setError(await res.text());
       }
-    } catch (e: any) {
-      setError(e.message);
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'Failed to load roles');
     } finally {
       setLoading(false);
     }
@@ -66,7 +73,8 @@ export function AdminRoles() {
     try {
       const res = await fetch(`/api/v1/admin/roles/${encodeURIComponent(subj)}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${localStorage.getItem('rib_auth_token')}` },
+        headers: requestHeaders(),
+        credentials: 'include',
       });
       if (res.status === 204) {
         setMessage(`Deleted ${subj}`);
@@ -74,8 +82,8 @@ export function AdminRoles() {
       } else {
         setError(await res.text());
       }
-    } catch (e: any) {
-      setError(e.message);
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'Failed to delete role');
     }
   };
 
@@ -94,14 +102,14 @@ export function AdminRoles() {
               type="text"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder="discord:123456789012345678 or btc:bc1q..."
+              placeholder="discord:user-id or btc:bitcoin-address"
               className="w-full p-2 border rounded font-mono text-xs"
               required
             />
             <p className="text-xs text-gray-500 mt-1 space-y-1">
               <span>Format: &lt;provider&gt;:&lt;identifier&gt;</span>
               <br />
-              <span>Examples: discord:123456789012345678, btc:1A1zP1...</span>
+              <span>Examples: discord:user-id, btc:bitcoin-address</span>
             </p>
           </div>
 
@@ -137,9 +145,9 @@ export function AdminRoles() {
       <div className="mt-8 p-4 bg-gray-100 rounded">
         <h2 className="font-semibold mb-2">How it works:</h2>
         <ul className="text-sm space-y-1">
-          <li>• Assign roles to any auth subject (Discord, Bitcoin, future providers)</li>
-          <li>• Subject must match the JWT sub prefix pattern used during login</li>
-          <li>• Roles: user (default), moderator, admin</li>
+          <li>• A Discord subject must have an explicit assignment before it can post</li>
+          <li>• Subject format is provider:identifier</li>
+          <li>• Roles: user, moderator, admin</li>
         </ul>
       </div>
 

@@ -1,14 +1,16 @@
+.PHONY: init run dev-infra docker-dev dev-backend dev-frontend build-images smoke fmt lint test frontend-check check docker-validate docker-up docker-down docker-down-volumes docker-logs docker-status up down
+
 init:
 	@echo "Installing git hooks (pre-commit) and running initial checks"
 	pre-commit install || echo "pre-commit not installed (pip install pre-commit)"
 	cargo fmt --all
-	cargo clippy --all-targets --all-features -- -D warnings || true
+	cargo clippy --all-targets --all-features -- -D warnings
 	cargo check
 
 run:
 	cargo run
 
-# --- Development Workflow Targets (see docs/dev-workflow.md) ---
+# --- Development Workflow Targets ---
 
 # Start only infrastructure dependencies for local dev (datastores, object storage)
 dev-infra:
@@ -31,15 +33,8 @@ dev-frontend:
 build-images:
 	docker compose build
 
-# Execute smoke test script (creates it if missing with instructions)
+# Execute the smoke test against a running stack.
 smoke:
-	@if [ ! -x scripts/smoke.sh ]; then \
-		mkdir -p scripts; \
-		echo "Smoke script missing. Creating a template at scripts/smoke.sh"; \
-		echo '#!/usr/bin/env bash' > scripts/smoke.sh; \
-		echo 'echo "(placeholder) customize smoke tests"' >> scripts/smoke.sh; \
-		chmod +x scripts/smoke.sh; \
-	fi
 	./scripts/smoke.sh
 
 fmt:
@@ -47,6 +42,14 @@ fmt:
 
 lint:
 	cargo clippy --all-targets --all-features -- -D warnings
+
+test:
+	./scripts/test.sh
+
+frontend-check:
+	cd rib-react && npm run lint && npm test -- --run && npm run build
+
+check: fmt lint test frontend-check
 
 # Docker commands
 docker-validate:
@@ -67,11 +70,8 @@ docker-logs:
 docker-status:
 	docker compose ps
 
-docker-dev:
-	@echo "(deprecated) use make dev-infra"
-
 up:
 	docker compose up -d
 
 down:
-	docker compose down -v
+	docker compose down

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 API=${API_BASE:-http://localhost:8080}
-FRONTEND=${FRONTEND_BASE:-http://localhost:3000}
+FRONTEND=${FRONTEND_BASE:-$API}
 
 pass() { echo -e "[PASS] $1"; }
 fail() { echo -e "[FAIL] $1" >&2; exit 1; }
@@ -24,7 +24,7 @@ curl -fsS "$API/docs/openapi.json" >/dev/null && pass 'openapi spec'
 status=$(curl -o /dev/null -s -w "%{http_code}" "$API/images/doesnotexist")
 [[ "$status" == "404" ]] && pass 'backend image 404'
 
-# 4. Frontend index (may be HTML). Allow failure if frontend not started.
+# 4. Embedded frontend index. Override FRONTEND_BASE for a separate Vite server.
 if curl -fsS "$FRONTEND/" >/dev/null; then
   pass 'frontend index'
 else

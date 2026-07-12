@@ -12,6 +12,7 @@ rib-react/dist
 rib-react/.vite
 rib-react/coverage
 rib-react/.eslintcache
+rib-react/*.tsbuildinfo
 
 # npm debug logs
 npm-debug.log*

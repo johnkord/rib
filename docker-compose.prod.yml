@@ -2,9 +2,17 @@
 services:
   rib-backend:
     environment:
-      # Production-specific environment
       - RUST_LOG=${RUST_LOG:-warn}
-      - FRONTEND_URL=${FRONTEND_URL:-https://your-domain.com}
+      - FRONTEND_URL=${FRONTEND_URL:?set FRONTEND_URL}
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET}
+      - TRIPCODE_SECRET=${TRIPCODE_SECRET:?set TRIPCODE_SECRET}
+      - DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/rib
+      - S3_ACCESS_KEY=${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      - S3_SECRET_KEY=${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      - RL_ENABLED=true
+      - ENABLE_HSTS=true
+      - TRUST_PROXY_HEADERS=true
+      - TRUSTED_PROXY_HOPS=${TRUSTED_PROXY_HOPS:-0}
     restart: always
     # Remove port exposure in production (use reverse proxy)
     ports: []
@@ -12,7 +20,7 @@ services:
   postgres:
     environment:
       # Use secure passwords in production
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secure-production-password}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     # Remove port exposure in production
     ports: []
     restart: always
@@ -25,8 +33,8 @@ services:
   minio:
     environment:
       # Use secure credentials in production
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-admin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-secure-production-password}
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
     # Remove port exposure in production
     ports: []
     restart: always

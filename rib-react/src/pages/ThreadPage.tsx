@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchJson, imageUrl, apiClient } from '../lib/api';
 import { useBoards } from '../hooks/useBoards';
 import MediaModal from '../components/MediaModal';
+import { ModeratorAuthorControls } from '../components/ModeratorAuthorControls';
 import { linkifyText } from '../lib/linkify';
 
 interface Thread {
@@ -17,6 +18,8 @@ interface Thread {
   bump_time: string;
   image_hash?: string;
   mime?: string | null;
+  author_name?: string | null;
+  tripcode?: string | null;
   deleted_at?: string | null;
 }
 type MediaItem = { hash: string; mime: string | null };
@@ -50,6 +53,8 @@ export function ThreadPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [authorName, setAuthorName] = useState('');
+  const [tripcodePassword, setTripcodePassword] = useState('');
   const { data: boards } = useBoards(false);
   const boardSlug = boards?.find((b) => b.id === thread.data?.board_id)?.slug;
   const location = useLocation();
@@ -78,11 +83,12 @@ export function ThreadPage() {
     try {
       setSubmitting(true);
       setError(null);
-      await createReply(threadId, content.trim(), file);
+      await createReply(threadId, content.trim(), file, authorName.trim(), tripcodePassword);
       setContent('');
       setFile(null);
-    } catch (err: any) {
-      setError(err.message);
+      setTripcodePassword('');
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'Failed to create reply');
     } finally {
       setSubmitting(false);
     }
@@ -173,6 +179,11 @@ export function ThreadPage() {
             Last post {new Date(thread.data.bump_time).toLocaleString()} • &nbsp;Created{' '}
             {new Date(thread.data.created_at).toLocaleString()}
           </p>
+          {(thread.data.author_name || thread.data.tripcode) && (
+            <p className="mb-2 text-sm font-mono">
+              {thread.data.author_name || 'Anonymous'} {thread.data.tripcode}
+            </p>
+          )}
           <h1 className="text-2xl mb-2">
             <Link className="link" to={`/thread/${thread.data.id}`}>
               {thread.data.subject}
@@ -183,7 +194,8 @@ export function ThreadPage() {
             thread.data.deleted_at && (
               <div className="alert alert-warning mb-3 py-2 px-3 text-sm flex items-center justify-between">
                 <span>Thread deleted (admin view)</span>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <ModeratorAuthorControls kind="threads" id={thread.data.id} />
                   <button
                     className="btn btn-xs"
                     onClick={async () => {
@@ -210,7 +222,7 @@ export function ThreadPage() {
           {user &&
             (user.role === 'admin' || user.role === 'moderator') &&
             !thread.data.deleted_at && (
-              <div className="mb-3 flex gap-2">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
                 <button
                   className="btn btn-xs"
                   onClick={async () => {
@@ -231,6 +243,7 @@ export function ThreadPage() {
                 >
                   Hard Delete
                 </button>
+                <ModeratorAuthorControls kind="threads" id={thread.data.id} />
               </div>
             )}
           <div
@@ -252,13 +265,19 @@ export function ThreadPage() {
             alt="attachment"
             onClick={() => openViewer(thread.data.image_hash!)}
           />
-        ) : (
+        ) : thread.data.mime?.startsWith('video/') ? (
           <video
             className="max-w-xs mb-4 cursor-pointer"
             controls
             src={imageUrl(thread.data.image_hash)}
             onClick={() => openViewer(thread.data.image_hash!)}
           ></video>
+        ) : thread.data.mime?.startsWith('audio/') ? (
+          <audio className="mb-4 w-full" controls src={imageUrl(thread.data.image_hash)} />
+        ) : (
+          <a className="link mb-4 inline-block" href={imageUrl(thread.data.image_hash)}>
+            Download attachment ({thread.data.mime || 'unknown type'})
+          </a>
         ))}
       <h2 className="text-lg font-semibold mb-2 flex items-center">
         {' '}
@@ -275,20 +294,47 @@ export function ThreadPage() {
           {isFetching ? 'Refreshing…' : 'Refresh'}
         </button>
       </h2>
-      <form className="mb-4 space-y-2" onSubmit={onSubmit}>
-        <textarea
-          className="textarea textarea-bordered w-full"
-          rows={3}
-          placeholder="Reply..."
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-        />
-        <input type="file" accept="image/*,video/*" onChange={onFileChange} />
-        {error && <p className="text-red-600 text-sm">{error}</p>}
-        <button className="btn btn-secondary" disabled={submitting}>
-          {submitting ? 'Posting…' : 'Reply'}
-        </button>
-      </form>
+      {user ? (
+        <form className="mb-4 space-y-2" onSubmit={onSubmit}>
+          <textarea
+            className="textarea textarea-bordered w-full"
+            rows={3}
+            placeholder="Reply..."
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+          />
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input
+              className="input input-bordered input-sm w-full"
+              placeholder="Name (optional)"
+              maxLength={40}
+              value={authorName}
+              onChange={(event) => setAuthorName(event.target.value)}
+            />
+            <input
+              className="input input-bordered input-sm w-full"
+              type="password"
+              autoComplete="off"
+              placeholder="Tripcode password (optional)"
+              minLength={4}
+              maxLength={128}
+              value={tripcodePassword}
+              onChange={(event) => setTripcodePassword(event.target.value)}
+            />
+          </div>
+          <input type="file" onChange={onFileChange} />
+          {error && <p className="text-red-600 text-sm">{error}</p>}
+          <button className="btn btn-secondary" disabled={submitting}>
+            {submitting ? 'Posting…' : 'Reply'}
+          </button>
+        </form>
+      ) : (
+        <p className="mb-4 text-sm">
+          <Link className="link" to="/login">
+            Sign in to reply.
+          </Link>
+        </p>
+      )}
       {isFetching && <p>Loading replies…</p>}
       {!isFetching && (
         <ul>
@@ -305,9 +351,15 @@ export function ThreadPage() {
                     No.{r.id}
                   </Link>
                   <span>{new Date(r.created_at).toLocaleString()}</span>
+                  {(r.author_name || r.tripcode) && (
+                    <span className="font-mono text-gray-700">
+                      {r.author_name || 'Anonymous'} {r.tripcode}
+                    </span>
+                  )}
                   {deleted && <span className="badge badge-error badge-outline">Deleted</span>}
                   {user && (user.role === 'admin' || user.role === 'moderator') && (
-                    <div className="ml-auto flex gap-1">
+                    <div className="ml-auto flex flex-wrap items-center gap-1">
+                      <ModeratorAuthorControls kind="replies" id={r.id} />
                       {!deleted && (
                         <button
                           className="btn btn-ghost btn-xs"
@@ -365,6 +417,17 @@ export function ThreadPage() {
                     onClick={() => openViewer(r.image_hash!)}
                   ></video>
                 )}
+                {r.image_hash && r.mime?.startsWith('audio/') && (
+                  <audio className="mt-1 w-full" controls src={imageUrl(r.image_hash)} />
+                )}
+                {r.image_hash &&
+                  !r.mime?.startsWith('image/') &&
+                  !r.mime?.startsWith('video/') &&
+                  !r.mime?.startsWith('audio/') && (
+                    <a className="link mt-1 inline-block" href={imageUrl(r.image_hash)}>
+                      Download attachment ({r.mime || 'unknown type'})
+                    </a>
+                  )}
               </li>
             );
           })}

@@ -2,7 +2,6 @@ use actix_cors::Cors;
 use actix_web::{middleware::Compress, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use utoipa_swagger_ui::SwaggerUi;
 
-use mime;
 use rust_embed::RustEmbed;
 
 #[derive(RustEmbed)]
@@ -66,15 +65,15 @@ async fn serve_frontend(req: HttpRequest) -> HttpResponse {
     }
 }
 
+use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use once_cell::sync::Lazy;
 use rib::auth::{Auth, Role};
-use rib::require_role; // macro
 use rib::openapi::ApiDoc;
+use rib::rate_limit::{InMemoryRateLimiter, RateLimitConfig, RateLimiterFacade};
+use rib::require_role; // macro
 use rib::routes::{config, AppState};
 use rib::security::SecurityHeaders;
 use rib::storage::build_image_store;
-use rib::rate_limit::{RateLimitConfig, RateLimiterFacade, InMemoryRateLimiter};
-use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
-use once_cell::sync::Lazy;
 use tracing::{info, Level};
 use tracing_actix_web::TracingLogger;
 use tracing_subscriber::EnvFilter;
@@ -92,7 +91,7 @@ async fn main() -> std::io::Result<()> {
     // Environment variables must be set externally (VS Code launch.json, shell, systemd, Docker, etc.)
     // Load .env automatically only in debug builds to reduce manual setup overhead.
     if cfg!(debug_assertions) {
-        let _ = dotenv::dotenv();
+        let _ = dotenvy::dotenv();
     }
 
     // Validate required environment variables
@@ -147,7 +146,7 @@ async fn main() -> std::io::Result<()> {
         }
         info!("Postgres migrations applied");
         info!("Using Postgres repository backend");
-    rib::repo::pg::PgRepo::new(pool)
+        rib::repo::pg::PgRepo::new(pool)
     };
 
     let openapi = ApiDoc::openapi();
@@ -155,8 +154,17 @@ async fn main() -> std::io::Result<()> {
     info!("OpenAPI spec generated");
 
     // Pre-build shared components to move into closure cheaply
-    let rl_enabled = std::env::var("RL_ENABLED").map(|v| v == "true" || v == "1").unwrap_or(false);
-    let rate_limiter_global = if rl_enabled { Some(RateLimiterFacade::new(InMemoryRateLimiter::new(true), RateLimitConfig::from_env())) } else { None };
+    let rl_enabled = std::env::var("RL_ENABLED")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
+    let rate_limiter_global = if rl_enabled {
+        Some(RateLimiterFacade::new(
+            InMemoryRateLimiter::new(true),
+            RateLimitConfig::from_env(),
+        ))
+    } else {
+        None
+    };
     let repo_arc = std::sync::Arc::new(repo);
     let image_store_arc = image_store.clone();
     let openapi_spec = openapi.clone();
@@ -186,24 +194,31 @@ async fn main() -> std::io::Result<()> {
 
         // metrics exporter handle clone per worker
         static PROM_HANDLE: Lazy<PrometheusHandle> = Lazy::new(|| {
-            PrometheusBuilder::new().install_recorder().expect("install prometheus recorder")
+            PrometheusBuilder::new()
+                .install_recorder()
+                .expect("install prometheus recorder")
         });
         let prometheus = PROM_HANDLE.clone();
         let mut app = App::new()
             .wrap(TracingLogger::default())
             .wrap(Compress::default())
-            .wrap(SecurityHeaders::from_env().with_hsts(true)) // use helper
+            .wrap(SecurityHeaders::from_env())
             .wrap(cors)
             .configure(config)
             .service(SwaggerUi::new("/docs").url("/docs/openapi.json", openapi_spec.clone()))
             .route("/mod/secret", web::get().to(moderator_only))
-            .route("/metrics", web::get().to(move || {
-                let handle = prometheus.clone();
-                async move {
-                    let body = handle.render();
-                    HttpResponse::Ok().content_type("text/plain; version=0.0.4").body(body)
-                }
-            }));
+            .route(
+                "/metrics",
+                web::get().to(move || {
+                    let handle = prometheus.clone();
+                    async move {
+                        let body = handle.render();
+                        HttpResponse::Ok()
+                            .content_type("text/plain; version=0.0.4")
+                            .body(body)
+                    }
+                }),
+            );
 
         // Catch-all route for SPA assets *after* API & docs so they override only unknown paths.
         app = app.service(
@@ -232,7 +247,10 @@ fn validate_env_vars() {
     use std::env;
 
     // Required variables that must be set
-    let required = vec!["JWT_SECRET"];
+    let mut required = vec!["JWT_SECRET"];
+    if !cfg!(debug_assertions) {
+        required.push("TRIPCODE_SECRET");
+    }
 
     let mut missing = Vec::new();
     for var in required {
@@ -252,6 +270,14 @@ fn validate_env_vars() {
         if secret.len() < 32 {
             eprintln!("JWT_SECRET must be at least 32 characters long for security");
             std::process::exit(1);
+        }
+    }
+    if !cfg!(debug_assertions) {
+        if let Ok(secret) = env::var("TRIPCODE_SECRET") {
+            if secret.len() < 32 {
+                eprintln!("TRIPCODE_SECRET must be at least 32 characters long for security");
+                std::process::exit(1);
+            }
         }
     }
 

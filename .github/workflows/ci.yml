@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rib_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d rib_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/rib_test
+      JWT_SECRET: "00000000000000000000000000000000"
+      TRIPCODE_SECRET: "11111111111111111111111111111111"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: rib-react/package-lock.json
+      - name: Build embedded frontend
+        run: |
+          cd rib-react
+          npm ci
+          npm run build
+          cd ..
+          mkdir -p embedded-frontend
+          cp -r rib-react/dist/* embedded-frontend/
+      - uses: dtolnay/rust-toolchain@1.97.0
+        with:
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Install SQLx CLI
+        run: cargo install sqlx-cli --version 0.8.6 --no-default-features --features rustls,postgres --locked
+      - name: Apply migrations
+        run: sqlx migrate run
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Lint
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Test
+        run: cargo test --all-features -- --test-threads=1
+      - name: Build
+        run: cargo build --release --all-features
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rib-react
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: rib-react/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test -- --run
+      - run: npm run build
+      - run: npm audit --audit-level=high
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build --tag rib:ci .
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan checkout for secrets
+        run: |
+          docker run --rm \
+            -v "$PWD:/repo" \
+            zricethezav/gitleaks:v8.18.1 \
+            detect --source /repo --no-git --redact --exit-code 1
+
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render and verify Kubernetes overlays
+        run: |
+          for env in dev prod aks; do
+            output="/tmp/rib-${env}.yaml"
+            kubectl kustomize "k8s/overlays/${env}" > "$output"
+            service=$(awk '/^kind: Service$/{found=1; next} found && /^  name: rib-backend/{print $2; exit}' "$output")
+            ingress=$(awk '/^kind: Ingress$/{found=1; next} found && /name: rib-backend/{print $2; exit}' "$output")
+            replicas=$(awk '/^kind: Deployment$/{found=1; next} found && /^  replicas:/{print $2; exit}' "$output")
+            max_replicas=$(awk '/^kind: HorizontalPodAutoscaler$/{found=1; next} found && /maxReplicas:/{print $2; exit}' "$output")
+            strategy=$(awk '/^kind: Deployment$/{found=1; next} found && /^  strategy:/{getline; print $2; exit}' "$output")
+            test "$service" = "$ingress"
+            test "$replicas" = "1"
+            test "$max_replicas" = "1"
+            test "$strategy" = "Recreate"
+          done
+      - name: Build Bicep template
+        run: az bicep build --file infra/bicep/main.bicep --stdout >/dev/null

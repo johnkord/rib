@@ -110,8 +110,9 @@ if ! kubectl -n rib get secret rib-secrets >/dev/null 2>&1; then
   echo "Creating rib-secrets placeholder (edit after)" >&2
   kubectl -n rib create secret generic rib-secrets \
     --from-literal=JWT_SECRET="$(openssl rand -hex 24)" \
-    --from-literal=DATABASE_URL="postgres://postgres:postgres@postgres:5432/rib" \
-    --from-literal=REDIS_URL="redis://redis:6379" \
+    --from-literal=TRIPCODE_SECRET="$(openssl rand -hex 24)" \
+    --from-literal=DATABASE_URL="postgres://postgres:postgres@postgres-aks:5432/rib" \
+    --from-literal=REDIS_URL="redis://redis-aks:6379" \
     --from-literal=S3_ACCESS_KEY="minioadmin" \
     --from-literal=S3_SECRET_KEY="minioadmin" \
     --from-literal=DISCORD_CLIENT_ID="" \

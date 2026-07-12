@@ -11,6 +11,8 @@ export interface Thread {
   bump_time: string;
   image_hash?: string;
   mime?: string;
+  author_name?: string | null;
+  tripcode?: string | null;
   deleted_at?: string | null;
   created_by: string; // Added created_by field
 }
@@ -26,7 +28,14 @@ export function useThreads(boardId: number | null, includeDeleted: boolean) {
 
 export function useCreateThread() {
   const qc = useQueryClient();
-  return async (boardId: number, subject: string, body: string, file?: File | null) => {
+  return async (
+    boardId: number,
+    subject: string,
+    body: string,
+    file?: File | null,
+    authorName?: string,
+    tripcodePassword?: string,
+  ) => {
     let image_hash: string | undefined;
     let mime: string | undefined;
 
@@ -42,8 +51,9 @@ export function useCreateThread() {
       body,
       image_hash,
       mime,
-      created_by: '',
-    }); // Added created_by
+      author_name: authorName || undefined,
+      tripcode_password: tripcodePassword || undefined,
+    });
     await qc.invalidateQueries({ queryKey: ['threads', boardId] });
   };
 }

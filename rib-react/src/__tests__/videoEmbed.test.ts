@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { extractYouTubeId, detectVideoEmbed, shouldEmbed } from '../lib/videoEmbed';
 import { createVideoEmbed } from '../lib/videoEmbed';
+import type { ReactElement } from 'react';
+
+type EmbedElement = ReactElement<{
+  className?: string;
+  sandbox?: string;
+  allow?: string;
+  referrerPolicy?: string;
+}>;
 
 describe('extractYouTubeId', () => {
   it('should extract ID from standard YouTube URLs', () => {
@@ -15,8 +23,8 @@ describe('extractYouTubeId', () => {
       const el = createVideoEmbed(embed, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', {
         widthClass: 'max-w-sm',
       });
-      const iframe = (el.props.children as any[]).find((c: any) => c.type === 'iframe');
-      expect(iframe.props.className).toContain('max-w-sm');
+      const iframe = (el.props.children as EmbedElement[]).find((child) => child.type === 'iframe');
+      expect(iframe?.props.className).toContain('max-w-sm');
     }
   });
 
@@ -70,12 +78,12 @@ describe('detectVideoEmbed', () => {
     if (embed) {
       const el = createVideoEmbed(embed, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
       // container div children
-      const iframe = (el.props.children as any[]).find((c: any) => c.type === 'iframe');
-      expect(iframe.props.sandbox).toBeUndefined();
+      const iframe = (el.props.children as EmbedElement[]).find((child) => child.type === 'iframe');
+      expect(iframe?.props.sandbox).toBeUndefined();
       // Trimmed allow list: ensure expected subset still present
-      expect(iframe.props.allow).toContain('autoplay');
-      expect(iframe.props.allow).not.toContain('web-share');
-      expect(iframe.props.referrerPolicy).toBe('strict-origin-when-cross-origin');
+      expect(iframe?.props.allow).toContain('autoplay');
+      expect(iframe?.props.allow).not.toContain('web-share');
+      expect(iframe?.props.referrerPolicy).toBe('strict-origin-when-cross-origin');
     }
   });
 

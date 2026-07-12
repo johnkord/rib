@@ -50,6 +50,8 @@ impl ResponseError for ApiError {
                 b
             }
         };
-        builder.json(ApiErrorBody { error: self.to_string() })
+        builder.json(ApiErrorBody {
+            error: self.to_string(),
+        })
     }
 }

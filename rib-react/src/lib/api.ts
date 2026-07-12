@@ -22,77 +22,69 @@ function apiUrl(path: string) {
   return `${API_BASE}${p}`;
 }
 
+function authHeaders(contentType = false): HeadersInit {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (contentType) headers['Content-Type'] = 'application/json';
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
 async function handle<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const body = await res.text();
+    try {
+      const problem = JSON.parse(body) as { error?: string; message?: string };
+      throw new Error(problem.message || problem.error || `Request failed (${res.status})`);
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error(body || `Request failed (${res.status})`);
+      }
+      throw error;
+    }
+  }
   return res.json() as Promise<T>;
 }
 
 export async function fetchJson<T>(path: string): Promise<T> {
-  const token = getAuthToken();
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const res = await fetch(apiUrl(path), { headers });
+  const res = await fetch(apiUrl(path), {
+    headers: authHeaders(true),
+    credentials: 'include',
+  });
   return handle<T>(res);
 }
 
 export async function postJson<TReq, TRes>(path: string, body: TReq): Promise<TRes> {
-  const token = getAuthToken();
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
   const res = await fetch(apiUrl(path), {
     method: 'POST',
-    headers,
+    headers: authHeaders(true),
+    credentials: 'include',
     body: JSON.stringify(body),
   });
   return handle<TRes>(res);
 }
 
-export async function patchJson(path: string, data: any) {
-  const token = getAuthToken();
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
+export async function patchJson(path: string, data: unknown): Promise<unknown> {
   const res = await fetch(apiUrl(path), {
     method: 'PATCH',
-    headers,
+    headers: authHeaders(true),
+    credentials: 'include',
     body: JSON.stringify(data),
   });
-  return handle(res);
+  return handle<unknown>(res);
 }
 
 export async function uploadImage(
   file: File,
 ): Promise<{ hash: string; mime: string; size: number }> {
-  const token = getAuthToken();
   const form = new FormData();
   form.append('file', file);
-
-  const headers: HeadersInit = {};
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
 
   const res = await fetch(apiUrl('/images'), {
     method: 'POST',
     body: form,
-    headers,
+    headers: authHeaders(),
+    credentials: 'include',
   });
 
   // 201 Created  ➜ new upload
@@ -125,6 +117,15 @@ export async function verifyBitcoinAddress(
 ): Promise<{ token: string }> {
   return postJson('/auth/bitcoin/verify', { address, signature });
 }
+
+export async function logoutSession(): Promise<void> {
+  const res = await fetch(apiUrl('/auth/logout'), {
+    method: 'POST',
+    headers: authHeaders(),
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
 // -----------------------------------------------------------------
 
 // --- ApiClient class ---
@@ -133,25 +134,6 @@ export class ApiClient {
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
-  }
-
-  async setDiscordRole(discordId: string, role: string): Promise<void> {
-    const token = getAuthToken();
-    if (!token) throw new Error('Not authenticated');
-
-    const response = await fetch(apiUrl('/admin/discord-roles'), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ discord_id: discordId, role }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to set role');
-    }
   }
 
   async softDelete(kind: 'boards' | 'threads' | 'replies', id: number) {
@@ -165,12 +147,11 @@ export class ApiClient {
   }
 
   private async _moderation(kind: string, id: number, action: string, method: 'POST' | 'DELETE') {
-    const token = getAuthToken();
-    if (!token) throw new Error('Not authenticated');
     const path = action ? `/admin/${kind}/${id}/${action}` : `/admin/${kind}/${id}`;
     const res = await fetch(apiUrl(path), {
       method,
-      headers: { Authorization: `Bearer ${token}` },
+      headers: authHeaders(),
+      credentials: 'include',
     });
     if (!res.ok) throw new Error(await res.text());
   }

@@ -1,30 +1,59 @@
 use actix_web::{test, App};
-use serde_json::json;
-use rib::{config, AppState};
 use rib::repo::pg::PgRepo;
 use rib::storage::{ImageStore, ImageStoreError};
-use std::sync::{Arc, Mutex};
+use rib::{config, AppState};
+use serde_json::json;
 use std::collections::HashMap;
-use wiremock::{MockServer, Mock, ResponseTemplate};
+use std::sync::{Arc, Mutex};
 use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[derive(Default)]
-struct MockImageStore { inner: Mutex<HashMap<String,(Vec<u8>,String)>> }
+struct MockImageStore {
+    inner: Mutex<HashMap<String, (Vec<u8>, String)>>,
+}
 #[async_trait::async_trait]
 impl ImageStore for MockImageStore {
-    async fn save(&self, hash:&str, mime:&str, bytes:&[u8]) -> Result<(), ImageStoreError> { let mut m = self.inner.lock().unwrap(); if m.contains_key(hash){return Err(ImageStoreError::Duplicate);} m.insert(hash.to_string(), (bytes.to_vec(), mime.to_string())); Ok(()) }
-    async fn load(&self, hash:&str) -> Result<(Vec<u8>, String), ImageStoreError> { let m = self.inner.lock().unwrap(); m.get(hash).cloned().ok_or(ImageStoreError::NotFound) }
-    async fn delete(&self, hash:&str) -> Result<(), ImageStoreError> { let mut m = self.inner.lock().unwrap(); m.remove(hash); Ok(()) }
+    async fn save(&self, hash: &str, mime: &str, bytes: &[u8]) -> Result<(), ImageStoreError> {
+        let mut m = self.inner.lock().unwrap();
+        if m.contains_key(hash) {
+            return Err(ImageStoreError::Duplicate);
+        }
+        m.insert(hash.to_string(), (bytes.to_vec(), mime.to_string()));
+        Ok(())
+    }
+    async fn load(&self, hash: &str) -> Result<(Vec<u8>, String), ImageStoreError> {
+        let m = self.inner.lock().unwrap();
+        m.get(hash).cloned().ok_or(ImageStoreError::NotFound)
+    }
+    async fn delete(&self, hash: &str) -> Result<(), ImageStoreError> {
+        let mut m = self.inner.lock().unwrap();
+        m.remove(hash);
+        Ok(())
+    }
 }
 
-async fn pg_repo() -> Option<PgRepo> { let url = std::env::var("DATABASE_URL").ok()?; let pool = sqlx::postgres::PgPoolOptions::new().max_connections(1).acquire_timeout(std::time::Duration::from_secs(5)).connect(&url).await.ok()?; Some(PgRepo::new(pool)) }
-fn ensure_secret() { if std::env::var("JWT_SECRET").is_err() { std::env::set_var("JWT_SECRET", "testsecret-abcdefghijklmnopqrstuvwxyz012345"); } }
+async fn pg_repo() -> PgRepo {
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL required for integration tests");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .connect(&url)
+        .await
+        .expect("connect test database");
+    PgRepo::new(pool)
+}
+fn ensure_secret() {
+    if std::env::var("JWT_SECRET").is_err() {
+        std::env::set_var("JWT_SECRET", "testsecret-abcdefghijklmnopqrstuvwxyz012345");
+    }
+}
 
-// Uses large provided UTXO set to ensure summation handles many entries & large values.
+// A very large unconfirmed balance must not satisfy the admission threshold.
 #[actix_web::test]
 #[serial_test::serial]
-async fn bitcoin_auth_mocked_large_utxo_balance() {
-    let Some(repo) = pg_repo().await else { eprintln!("skip: no DATABASE_URL"); return; };
+async fn bitcoin_auth_ignores_large_unconfirmed_utxo_balance() {
+    let repo = pg_repo().await;
     ensure_secret();
     // Granular control now; leave sig skipped explicitly below
     std::env::remove_var("BTC_AUTH_TEST_BALANCE_OVERRIDE");
@@ -36,7 +65,10 @@ async fn bitcoin_auth_mocked_large_utxo_balance() {
 
     let address = "bc1qryhgpmfv03qjhhp2dj8nw8g4ewg08jzmgy3cyx";
     // Insert dummy challenge (not validating signature)
-    let challenge = format!("Prove you own Bitcoin address {} (nonce testnonce)", address);
+    let challenge = format!(
+        "Prove you own Bitcoin address {} (nonce testnonce)",
+        address
+    );
     rib::btc_test_insert_challenge(address, &challenge).await;
 
     // Provided UTXO JSON
@@ -59,19 +91,33 @@ async fn bitcoin_auth_mocked_large_utxo_balance() {
         {"txid":"7e52f56d659cfa426320608490148890fbbea1a7bd7766c1c3fe7633d40ca922","vout":0,"status":{"confirmed":false},"value":271986102}
     ]);
 
-    Mock::given(method("GET")).and(path(format!("/address/{}/utxo", address)))
+    Mock::given(method("GET"))
+        .and(path(format!("/address/{}/utxo", address)))
         .respond_with(ResponseTemplate::new(200).set_body_json(utxos_json))
-        .mount(&mock_server).await;
+        .mount(&mock_server)
+        .await;
 
-    let state = AppState { repo: Arc::new(repo), image_store: Arc::new(MockImageStore::default()), rate_limiter: None };
-    let mut app = test::init_service(App::new().app_data(actix_web::web::Data::new(state)).configure(config)).await;
+    let state = AppState {
+        repo: Arc::new(repo),
+        image_store: Arc::new(MockImageStore::default()),
+        rate_limiter: None,
+    };
+    let app = test::init_service(
+        App::new()
+            .app_data(actix_web::web::Data::new(state))
+            .configure(config),
+    )
+    .await;
 
     // Perform verify (signature skipped, balance enforced) - use dummy signature placeholder
-    let req = test::TestRequest::post().uri("/api/v1/auth/bitcoin/verify")
-        .set_json(&json!({"address": address, "signature": "dummysig"}))
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/bitcoin/verify")
+        .set_json(json!({"address": address, "signature": "dummysig"}))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
-    assert_eq!(resp.status(), 200, "should succeed because aggregated mocked balance >> min threshold");
-    let body: serde_json::Value = serde_json::from_slice(&test::read_body(resp).await).unwrap();
-    assert!(body.get("token").and_then(|v| v.as_str()).unwrap_or("").len() > 10);
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "large unconfirmed UTXOs must not satisfy the admission threshold"
+    );
 }

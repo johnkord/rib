@@ -28,7 +28,12 @@ pub trait BoardRepo: Send + Sync {
 #[async_trait]
 pub trait ThreadRepo: Send + Sync {
     async fn list_threads(&self, board_id: Id, include_deleted: bool) -> RepoResult<Vec<Thread>>;
-    async fn create_thread(&self, new: NewThread, created_by: Value) -> RepoResult<Thread>; // created_by now supplied by caller (JSON)
+    async fn create_thread(
+        &self,
+        new: NewThread,
+        created_by: Value,
+        public_identity: PublicIdentity,
+    ) -> RepoResult<Thread>;
     async fn get_thread(&self, id: Id) -> RepoResult<Thread>;
     async fn soft_delete_thread(&self, id: Id) -> RepoResult<()>;
     async fn restore_thread(&self, id: Id) -> RepoResult<()>;
@@ -38,7 +43,12 @@ pub trait ThreadRepo: Send + Sync {
 #[async_trait]
 pub trait ReplyRepo: Send + Sync {
     async fn list_replies(&self, thread_id: Id, include_deleted: bool) -> RepoResult<Vec<Reply>>;
-    async fn create_reply(&self, new: NewReply, created_by: Value) -> RepoResult<Reply>; // created_by now supplied by caller (JSON)
+    async fn create_reply(
+        &self,
+        new: NewReply,
+        created_by: Value,
+        public_identity: PublicIdentity,
+    ) -> RepoResult<Reply>;
     async fn soft_delete_reply(&self, id: Id) -> RepoResult<()>;
     async fn restore_reply(&self, id: Id) -> RepoResult<()>;
     async fn hard_delete_reply(&self, id: Id) -> RepoResult<()>;
@@ -53,9 +63,28 @@ pub trait RoleRepo: Send + Sync {
     async fn delete_role(&self, subject: &str) -> RepoResult<()>;
 }
 
-pub trait Repo: BoardRepo + ThreadRepo + ReplyRepo + RoleRepo {}
+#[async_trait]
+pub trait ImageRepo: Send + Sync {
+    async fn list_board_image_hashes(&self, board_id: Id) -> RepoResult<Vec<String>>;
+    async fn list_thread_image_hashes(&self, thread_id: Id) -> RepoResult<Vec<String>>;
+    async fn is_image_referenced(&self, hash: &str) -> RepoResult<bool>;
+}
 
-impl<T> Repo for T where T: BoardRepo + ThreadRepo + ReplyRepo + RoleRepo {}
+#[async_trait]
+pub trait BanRepo: Send + Sync {
+    async fn is_subject_banned(&self, subject: &str) -> RepoResult<bool>;
+    async fn create_subject_ban(
+        &self,
+        new: NewSubjectBan,
+        banned_by: &str,
+    ) -> RepoResult<SubjectBan>;
+    async fn list_subject_bans(&self) -> RepoResult<Vec<SubjectBan>>;
+    async fn delete_subject_ban(&self, subject: &str) -> RepoResult<()>;
+}
+
+pub trait Repo: BoardRepo + ThreadRepo + ReplyRepo + RoleRepo + ImageRepo + BanRepo {}
+
+impl<T> Repo for T where T: BoardRepo + ThreadRepo + ReplyRepo + RoleRepo + ImageRepo + BanRepo {}
 
 // Postgres implementation (now the only backend)
 pub mod pg {
@@ -168,7 +197,7 @@ pub mod pg {
         ) -> RepoResult<Vec<Thread>> {
             let base = r#"
           SELECT t.id, t.board_id, t.subject, t.body, t.created_at, t.bump_time, t.created_by,
-              img.hash as image_hash, img.mime as mime, t.deleted_at
+              img.hash as image_hash, img.mime as mime, t.author_name, t.tripcode, t.deleted_at
                 FROM threads t
                 LEFT JOIN LATERAL (
                    SELECT i.hash, i.mime FROM images i
@@ -189,31 +218,39 @@ pub mod pg {
                 .map_err(|_| RepoError::NotFound)?;
             Ok(recs)
         }
-        async fn create_thread(&self, new: NewThread, created_by: Value) -> RepoResult<Thread> {
+        async fn create_thread(
+            &self,
+            new: NewThread,
+            created_by: Value,
+            public_identity: PublicIdentity,
+        ) -> RepoResult<Thread> {
             let mut tx = self.pool.begin().await.map_err(|_| RepoError::Conflict)?;
 
             // insert thread and capture its id
             let rec = sqlx::query(
-                "INSERT INTO threads (board_id, subject, body, created_by) VALUES ($1,$2,$3,$4) RETURNING id"
+                "INSERT INTO threads (board_id, subject, body, created_by, author_name, tripcode) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id"
             )
                 .bind(new.board_id)
                 .bind(&new.subject)
                 .bind(&new.body)
                 .bind(&created_by)
+                .bind(&public_identity.author_name)
+                .bind(&public_identity.tripcode)
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|_| RepoError::NotFound)?;
             let thread_id: Id = rec.get::<Id, _>("id");
 
             if let (Some(hash), Some(mime)) = (new.image_hash.as_ref(), new.mime.as_ref()) {
-                let _ = sqlx::query(
-                    "INSERT INTO images (thread_id, reply_id, hash, mime) VALUES ($1, NULL, $2, $3) ON CONFLICT (hash) DO NOTHING"
+                sqlx::query(
+                    "INSERT INTO images (thread_id, reply_id, hash, mime) VALUES ($1, NULL, $2, $3)"
                 )
                     .bind(thread_id)
                     .bind(hash)
                     .bind(mime)
                     .execute(&mut *tx)
-                    .await;
+                    .await
+                    .map_err(|_| RepoError::Conflict)?;
             }
 
             tx.commit().await.map_err(|_| RepoError::Conflict)?;
@@ -222,7 +259,7 @@ pub mod pg {
             let thread = sqlx::query_as::<_, Thread>(
                 r#"
           SELECT t.id, t.board_id, t.subject, t.body, t.created_at, t.bump_time, t.created_by,
-              img.hash as image_hash, img.mime as mime, t.deleted_at
+              img.hash as image_hash, img.mime as mime, t.author_name, t.tripcode, t.deleted_at
                 FROM threads t
                 LEFT JOIN LATERAL (
                     SELECT i.hash, i.mime
@@ -244,7 +281,7 @@ pub mod pg {
         async fn get_thread(&self, id: Id) -> RepoResult<Thread> {
             let thread = sqlx::query_as::<_, Thread>(r#"
           SELECT t.id, t.board_id, t.subject, t.body, t.created_at, t.bump_time, t.created_by,
-              img.hash as image_hash, img.mime as mime, t.deleted_at
+              img.hash as image_hash, img.mime as mime, t.author_name, t.tripcode, t.deleted_at
                 FROM threads t
                 LEFT JOIN LATERAL (
                    SELECT i.hash, i.mime FROM images i WHERE i.thread_id = t.id ORDER BY i.id ASC LIMIT 1
@@ -298,7 +335,8 @@ pub mod pg {
             include_deleted: bool,
         ) -> RepoResult<Vec<Reply>> {
             let base = r#"
-                SELECT r.id, r.thread_id, r.content, img.hash as image_hash, img.mime as mime, r.created_at, r.deleted_at, r.created_by
+                SELECT r.id, r.thread_id, r.content, img.hash as image_hash, img.mime as mime,
+                    r.author_name, r.tripcode, r.created_at, r.deleted_at, r.created_by
                 FROM replies r
                 LEFT JOIN LATERAL (
                    SELECT i.hash, i.mime FROM images i WHERE i.reply_id = r.id ORDER BY i.id ASC LIMIT 1
@@ -317,29 +355,37 @@ pub mod pg {
                 .map_err(|_| RepoError::NotFound)?;
             Ok(recs)
         }
-        async fn create_reply(&self, new: NewReply, created_by: Value) -> RepoResult<Reply> {
+        async fn create_reply(
+            &self,
+            new: NewReply,
+            created_by: Value,
+            public_identity: PublicIdentity,
+        ) -> RepoResult<Reply> {
             let mut tx = self.pool.begin().await.map_err(|_| RepoError::Conflict)?;
 
             let rec = sqlx::query(
-                "INSERT INTO replies (thread_id, content, created_by) VALUES ($1,$2,$3) RETURNING id"
+                "INSERT INTO replies (thread_id, content, created_by, author_name, tripcode) VALUES ($1,$2,$3,$4,$5) RETURNING id"
             )
                 .bind(new.thread_id)
                 .bind(&new.content)
                 .bind(&created_by)
+                .bind(&public_identity.author_name)
+                .bind(&public_identity.tripcode)
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|_| RepoError::NotFound)?;
             let reply_id: Id = rec.get::<Id, _>("id");
 
             if let (Some(hash), Some(mime)) = (new.image_hash.as_ref(), new.mime.as_ref()) {
-                let _ = sqlx::query(
-                    "INSERT INTO images (thread_id, reply_id, hash, mime) VALUES (NULL, $1, $2, $3) ON CONFLICT (hash) DO NOTHING"
+                sqlx::query(
+                    "INSERT INTO images (thread_id, reply_id, hash, mime) VALUES (NULL, $1, $2, $3)"
                 )
                     .bind(reply_id)
                     .bind(hash)
                     .bind(mime)
                     .execute(&mut *tx)
-                    .await;
+                    .await
+                    .map_err(|_| RepoError::Conflict)?;
             }
 
             // bump parent thread
@@ -355,7 +401,7 @@ pub mod pg {
                 r#"
           SELECT r.id, r.thread_id, r.content,
               img.hash as image_hash, img.mime as mime,
-              r.created_at, r.deleted_at, r.created_by
+              r.author_name, r.tripcode, r.created_at, r.deleted_at, r.created_by
                 FROM replies r
                 LEFT JOIN LATERAL (
                     SELECT i.hash, i.mime
@@ -415,7 +461,7 @@ pub mod pg {
                 r#"
           SELECT r.id, r.thread_id, r.content,
               img.hash as image_hash, img.mime as mime,
-              r.created_at, r.deleted_at, r.created_by
+              r.author_name, r.tripcode, r.created_at, r.deleted_at, r.created_by
                 FROM replies r
                 LEFT JOIN LATERAL (
                     SELECT i.hash, i.mime
@@ -454,7 +500,11 @@ pub mod pg {
             None
         }
         async fn set_subject_role(&self, subject: &str, role: AuthRole) -> RepoResult<()> {
-            let role_str = match role { AuthRole::Admin => "admin", AuthRole::Moderator => "moderator", AuthRole::User => "user" };
+            let role_str = match role {
+                AuthRole::Admin => "admin",
+                AuthRole::Moderator => "moderator",
+                AuthRole::User => "user",
+            };
             let _ = sqlx::query("INSERT INTO user_roles (subject, role, updated_at) VALUES ($1,$2, now()) ON CONFLICT (subject) DO UPDATE SET role=EXCLUDED.role, updated_at=now()")
                 .bind(subject)
                 .bind(role_str)
@@ -472,7 +522,12 @@ pub mod pg {
             for r in rows {
                 let subject: String = r.get("subject");
                 let role_str: String = r.get("role");
-                if let Some(role) = match role_str.as_str() { "admin"=>Some(AuthRole::Admin), "moderator"=>Some(AuthRole::Moderator), "user"=>Some(AuthRole::User), _=>None } {
+                if let Some(role) = match role_str.as_str() {
+                    "admin" => Some(AuthRole::Admin),
+                    "moderator" => Some(AuthRole::Moderator),
+                    "user" => Some(AuthRole::User),
+                    _ => None,
+                } {
                     out.push((subject, role));
                 }
             }
@@ -484,8 +539,118 @@ pub mod pg {
                 .execute(&self.pool)
                 .await
                 .map_err(|_| RepoError::NotFound)?;
-            if res.rows_affected()==0 { return Err(RepoError::NotFound); }
+            if res.rows_affected() == 0 {
+                return Err(RepoError::NotFound);
+            }
             Ok(())
         }
     } // end impl RoleRepo
+
+    #[async_trait]
+    impl ImageRepo for PgRepo {
+        async fn list_board_image_hashes(&self, board_id: Id) -> RepoResult<Vec<String>> {
+            sqlx::query_scalar(
+                r#"
+                SELECT DISTINCT i.hash
+                FROM images i
+                LEFT JOIN threads direct_thread ON direct_thread.id = i.thread_id
+                LEFT JOIN replies r ON r.id = i.reply_id
+                LEFT JOIN threads reply_thread ON reply_thread.id = r.thread_id
+                WHERE direct_thread.board_id = $1 OR reply_thread.board_id = $1
+                "#,
+            )
+            .bind(board_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| RepoError::NotFound)
+        }
+
+        async fn list_thread_image_hashes(&self, thread_id: Id) -> RepoResult<Vec<String>> {
+            sqlx::query_scalar(
+                r#"
+                SELECT DISTINCT i.hash
+                FROM images i
+                LEFT JOIN replies r ON r.id = i.reply_id
+                WHERE i.thread_id = $1 OR r.thread_id = $1
+                "#,
+            )
+            .bind(thread_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| RepoError::NotFound)
+        }
+
+        async fn is_image_referenced(&self, hash: &str) -> RepoResult<bool> {
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM images WHERE hash=$1)")
+                .bind(hash)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|_| RepoError::NotFound)
+        }
+    }
+
+    #[async_trait]
+    impl BanRepo for PgRepo {
+        async fn is_subject_banned(&self, subject: &str) -> RepoResult<bool> {
+            sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM subject_bans WHERE subject=$1 AND (expires_at IS NULL OR expires_at > now()))",
+            )
+            .bind(subject)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|_| RepoError::NotFound)
+        }
+
+        async fn create_subject_ban(
+            &self,
+            new: NewSubjectBan,
+            banned_by: &str,
+        ) -> RepoResult<SubjectBan> {
+            sqlx::query_as::<_, SubjectBan>(
+                r#"
+                INSERT INTO subject_bans (subject, reason, banned_by, expires_at)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (subject) DO UPDATE SET
+                    reason = EXCLUDED.reason,
+                    banned_by = EXCLUDED.banned_by,
+                    created_at = now(),
+                    expires_at = EXCLUDED.expires_at
+                RETURNING subject, reason, banned_by, created_at, expires_at
+                "#,
+            )
+            .bind(&new.subject)
+            .bind(&new.reason)
+            .bind(banned_by)
+            .bind(new.expires_at)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|_| RepoError::Conflict)
+        }
+
+        async fn list_subject_bans(&self) -> RepoResult<Vec<SubjectBan>> {
+            sqlx::query_as::<_, SubjectBan>(
+                r#"
+                SELECT subject, reason, banned_by, created_at, expires_at
+                FROM subject_bans
+                WHERE expires_at IS NULL OR expires_at > now()
+                ORDER BY created_at DESC
+                "#,
+            )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| RepoError::NotFound)
+        }
+
+        async fn delete_subject_ban(&self, subject: &str) -> RepoResult<()> {
+            let result = sqlx::query("DELETE FROM subject_bans WHERE subject=$1")
+                .bind(subject)
+                .execute(&self.pool)
+                .await
+                .map_err(|_| RepoError::NotFound)?;
+            if result.rows_affected() == 0 {
+                return Err(RepoError::NotFound);
+            }
+            Ok(())
+        }
+    }
 } // end pg module

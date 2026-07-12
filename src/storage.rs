@@ -20,6 +20,14 @@ pub trait ImageStore: Send + Sync {
     async fn delete(&self, hash: &str) -> Result<(), ImageStoreError>;
 }
 
+pub fn is_valid_content_hash(hash: &str) -> bool {
+    hash.len() == 64
+        && hash
+            .as_bytes()
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+}
+
 // ---------------- S3 Implementation (MinIO compatible; ONLY supported backend) ----------------
 pub struct S3ImageStore {
     bucket: String,
@@ -96,8 +104,11 @@ impl S3ImageStore {
             prefix: "images".into(),
         })
     }
-    fn key_for(&self, hash: &str) -> String {
-        format!("{}/{}/{}", self.prefix, &hash[0..2], hash)
+    fn key_for(&self, hash: &str) -> Result<String, ImageStoreError> {
+        if !is_valid_content_hash(hash) {
+            return Err(ImageStoreError::NotFound);
+        }
+        Ok(format!("{}/{}/{}", self.prefix, &hash[..2], hash))
     }
 }
 
@@ -105,7 +116,7 @@ impl S3ImageStore {
 impl ImageStore for S3ImageStore {
     async fn save(&self, hash: &str, _mime: &str, bytes: &[u8]) -> Result<(), ImageStoreError> {
         use aws_sdk_s3::primitives::ByteStream;
-        let key = self.key_for(hash);
+        let key = self.key_for(hash)?;
         // Attempt HEAD to detect duplicate
         if self
             .client
@@ -144,12 +155,12 @@ impl ImageStore for S3ImageStore {
             } else {
                 ""
             };
-            return Err(ImageStoreError::Other(format!("{}{}", e.to_string(), hint)));
+            return Err(ImageStoreError::Other(format!("{e}{hint}")));
         }
         Ok(())
     }
     async fn load(&self, hash: &str) -> Result<(Vec<u8>, String), ImageStoreError> {
-        let key = self.key_for(hash);
+        let key = self.key_for(hash)?;
         let obj = self
             .client
             .get_object()
@@ -171,15 +182,14 @@ impl ImageStore for S3ImageStore {
         Ok((bytes, mime))
     }
     async fn delete(&self, hash: &str) -> Result<(), ImageStoreError> {
-        let key = self.key_for(hash);
-        // Best-effort delete: treat not found as success
-        let _ = self
-            .client
+        let key = self.key_for(hash)?;
+        self.client
             .delete_object()
             .bucket(&self.bucket)
             .key(&key)
             .send()
-            .await;
+            .await
+            .map_err(|error| ImageStoreError::Other(error.to_string()))?;
         Ok(())
     }
 }

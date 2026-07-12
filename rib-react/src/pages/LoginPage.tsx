@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { API_BASE, requestBitcoinChallenge, verifyBitcoinAddress } from '../lib/api';
-import { setAuthToken } from '../lib/auth';
+import { useAuth } from '../hooks/useAuth';
 
 export function LoginPage() {
   const navigate = useNavigate();
-
-  useEffect(() => {
-    // Token capture handled globally in App; no-op here
-  }, []);
+  const { refresh } = useAuth();
+  const [searchParams] = useSearchParams();
+  const discordError =
+    searchParams.get('error') === 'discord_not_allowlisted'
+      ? 'This Discord identity has not been allowlisted by an administrator.'
+      : null;
 
   const handleDiscordLogin = () => {
     // use absolute backend URL so the browser is redirected to Actix, not Vite
@@ -28,8 +30,8 @@ export function LoginPage() {
       const { challenge } = await requestBitcoinChallenge(btcAddress.trim());
       setChallenge(challenge);
       setStep('sign');
-    } catch (e: any) {
-      setError(e.message || 'Failed to get challenge');
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'Failed to get challenge');
     }
   };
 
@@ -38,24 +40,25 @@ export function LoginPage() {
     setError(null);
     setStep('verifying');
     try {
-      const { token } = await verifyBitcoinAddress(btcAddress.trim(), signature.trim());
-      setAuthToken(token);
+      await verifyBitcoinAddress(btcAddress.trim(), signature.trim());
+      await refresh();
       setStep('done');
       navigate('/');
-    } catch (e: any) {
-      setError(e.message || 'Verification failed');
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'Verification failed');
       setStep('sign');
     }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen">
-      <div className="card w-96 bg-base-100 shadow-xl">
+    <div className="flex flex-col items-center justify-center py-8">
+      <div className="card w-full max-w-md bg-base-100 shadow-xl">
         <div className="card-body">
           <h2 className="card-title">Login to RIB</h2>
           <p className="text-sm text-gray-500 mb-4">
-            Authenticate with your Discord account to post and participate.
+            Use an allowlisted Discord identity or prove control of a qualifying Bitcoin address.
           </p>
+          {discordError && <div className="alert alert-warning text-sm mb-4">{discordError}</div>}
           <div className="space-y-6">
             <div className="card-actions justify-center">
               <button className="btn btn-primary gap-2 w-full" onClick={handleDiscordLogin}>

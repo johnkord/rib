@@ -34,41 +34,29 @@ impl ImageStore for MockImageStore {
     }
 }
 
-async fn test_repo() -> Option<PgRepo> {
-    let url = match std::env::var("DATABASE_URL") {
-        Ok(u) => u,
-        Err(_) => return None,
-    };
-    let pool = match PgPoolOptions::new()
+async fn test_repo() -> PgRepo {
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL required for integration tests");
+    let pool = PgPoolOptions::new()
         .max_connections(1)
         .acquire_timeout(std::time::Duration::from_secs(5))
         .connect(&url)
         .await
-    {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("skip: db connect failed: {e}");
-            return None;
-        }
-    };
-    Some(PgRepo::new(pool))
+        .expect("connect test database");
+    PgRepo::new(pool)
 }
 
 #[actix_web::test]
 #[serial_test::serial]
 async fn test_security_headers_present() {
     std::env::remove_var("ENABLE_HSTS");
-    let Some(repo) = test_repo().await else {
-        eprintln!("skip: no DATABASE_URL");
-        return;
-    };
+    let repo = test_repo().await;
     let image_store = Arc::new(MockImageStore::default());
     let app = test::init_service(
         App::new()
             .wrap(SecurityHeaders::from_env())
             .app_data(actix_web::web::Data::new(AppState {
                 repo: Arc::new(repo),
-                image_store: image_store,
+                image_store,
                 rate_limiter: None,
             }))
             .configure(config),
@@ -86,10 +74,7 @@ async fn test_security_headers_present() {
 #[actix_web::test]
 #[serial_test::serial]
 async fn test_hsts_enabled_via_env() {
-    let Some(repo) = test_repo().await else {
-        eprintln!("skip: no DATABASE_URL");
-        return;
-    };
+    let repo = test_repo().await;
     let image_store = Arc::new(MockImageStore::default());
     let sec = SecurityHeaders::from_env().with_hsts(true);
     let app = test::init_service(
@@ -97,7 +82,7 @@ async fn test_hsts_enabled_via_env() {
             .wrap(sec)
             .app_data(actix_web::web::Data::new(AppState {
                 repo: Arc::new(repo),
-                image_store: image_store,
+                image_store,
                 rate_limiter: None,
             }))
             .configure(config),
@@ -119,17 +104,14 @@ async fn test_hsts_enabled_via_env() {
 #[serial_test::serial]
 async fn test_env_var_enables_hsts_without_builder_override() {
     std::env::set_var("ENABLE_HSTS", "1");
-    let Some(repo) = test_repo().await else {
-        eprintln!("skip: no DATABASE_URL");
-        return;
-    };
+    let repo = test_repo().await;
     let image_store = Arc::new(MockImageStore::default());
     let app = test::init_service(
         App::new()
             .wrap(SecurityHeaders::from_env())
             .app_data(actix_web::web::Data::new(AppState {
                 repo: Arc::new(repo),
-                image_store: image_store,
+                image_store,
                 rate_limiter: None,
             }))
             .configure(config),
@@ -147,17 +129,14 @@ async fn test_env_var_enables_hsts_without_builder_override() {
 #[serial_test::serial]
 async fn test_builder_can_disable_hsts_even_when_env_set() {
     std::env::set_var("ENABLE_HSTS", "true");
-    let Some(repo) = test_repo().await else {
-        eprintln!("skip: no DATABASE_URL");
-        return;
-    };
+    let repo = test_repo().await;
     let image_store = Arc::new(MockImageStore::default());
     let app = test::init_service(
         App::new()
             .wrap(SecurityHeaders::from_env().with_hsts(false))
             .app_data(actix_web::web::Data::new(AppState {
                 repo: Arc::new(repo),
-                image_store: image_store,
+                image_store,
                 rate_limiter: None,
             }))
             .configure(config),
@@ -174,17 +153,14 @@ async fn test_builder_can_disable_hsts_even_when_env_set() {
 #[actix_web::test]
 #[serial_test::serial]
 async fn test_existing_csp_header_preserved() {
-    let Some(repo) = test_repo().await else {
-        eprintln!("skip: no DATABASE_URL");
-        return;
-    };
+    let repo = test_repo().await;
     let image_store = Arc::new(MockImageStore::default());
     let app = test::init_service(
         App::new()
             .wrap(SecurityHeaders::from_env())
             .app_data(actix_web::web::Data::new(AppState {
                 repo: Arc::new(repo),
-                image_store: image_store,
+                image_store,
                 rate_limiter: None,
             }))
             .route(

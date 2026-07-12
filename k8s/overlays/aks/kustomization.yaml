@@ -19,6 +19,16 @@ patches:
       kind: Ingress
       name: rib-ingress
     path: ingress-host-patch.yaml
+  - target:
+      kind: ConfigMap
+      name: rib-config
+    patch: |-
+      - op: replace
+        path: /data/ENABLE_HSTS
+        value: "true"
+      - op: replace
+        path: /data/S3_ENDPOINT
+        value: http://minio-aks:9000
 
 # Removed ghcr imagePullSecrets patch (ACR usually uses managed identity / azure auth)
 # Add future patches (config checksum, resources overrides) here.

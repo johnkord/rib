@@ -2,6 +2,7 @@ use actix_web::{test, App};
 use rib::auth::{create_jwt, Role};
 use rib::models::{Board, Reply, Thread};
 use rib::repo::pg::PgRepo;
+use rib::repo::RoleRepo;
 use rib::storage::{ImageStore, ImageStoreError};
 use rib::{config, AppState};
 use serde_json::json;
@@ -49,41 +50,48 @@ fn admin_token(username: &str) -> String {
     create_jwt(username, username, vec![Role::Admin]).unwrap()
 }
 
-async fn repo() -> Option<PgRepo> {
-    let url = std::env::var("DATABASE_URL").ok()?;
+async fn repo() -> PgRepo {
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL required for integration tests");
     let pool = PgPoolOptions::new()
         .max_connections(1)
         .acquire_timeout(std::time::Duration::from_secs(5))
         .connect(&url)
         .await
-        .ok()?;
-    Some(PgRepo::new(pool))
+        .expect("connect test database");
+    let repo = PgRepo::new(pool);
+    repo.set_subject_role("discord:alice", Role::User)
+        .await
+        .expect("allowlist attribution user");
+    repo
 }
 
-// Helper: query raw created_by directly; created_by is skipped in API serialization.
-async fn fetch_thread_created_by(pool: &sqlx::Pool<sqlx::Postgres>, id: i64) -> Option<String> {
-    sqlx::query_scalar::<_, String>("SELECT created_by FROM threads WHERE id=$1")
+// Query private moderation attribution directly; public API serialization omits it.
+async fn fetch_thread_created_by(
+    pool: &sqlx::Pool<sqlx::Postgres>,
+    id: i64,
+) -> Option<serde_json::Value> {
+    sqlx::query_scalar::<_, serde_json::Value>("SELECT created_by FROM threads WHERE id=$1")
         .bind(id)
         .fetch_one(pool)
         .await
         .ok()
 }
-async fn fetch_reply_created_by(pool: &sqlx::Pool<sqlx::Postgres>, id: i64) -> Option<String> {
-    sqlx::query_scalar::<_, String>("SELECT created_by FROM replies WHERE id=$1")
+async fn fetch_reply_created_by(
+    pool: &sqlx::Pool<sqlx::Postgres>,
+    id: i64,
+) -> Option<serde_json::Value> {
+    sqlx::query_scalar::<_, serde_json::Value>("SELECT created_by FROM replies WHERE id=$1")
         .bind(id)
         .fetch_one(pool)
         .await
         .ok()
 }
 
-// Core test: ensure created_by stores username portion of JWT (post-change behavior)
+// Private attribution is structured and stable while public responses stay anonymous.
 #[actix_web::test]
 #[serial_test::serial]
-async fn test_created_by_persists_username_for_thread_and_reply() {
-    let Some(repo) = repo().await else {
-        eprintln!("skip: no DATABASE_URL");
-        return;
-    };
+async fn private_attribution_persists_for_thread_and_reply() {
+    let repo = repo().await;
     // Keep underlying pool to raw query created_by
     let pool = match std::env::var("DATABASE_URL") {
         Ok(u) => PgPoolOptions::new()
@@ -100,7 +108,7 @@ async fn test_created_by_persists_username_for_thread_and_reply() {
         image_store: Arc::new(MockImageStore::default()),
         rate_limiter: None,
     };
-    let mut app = test::init_service(
+    let app = test::init_service(
         App::new()
             .app_data(actix_web::web::Data::new(state))
             .configure(config),
@@ -115,9 +123,9 @@ async fn test_created_by_persists_username_for_thread_and_reply() {
     let req = test::TestRequest::post()
         .uri("/api/v1/boards")
         .insert_header(("Authorization", format!("Bearer {}", admin_jwt)))
-        .set_json(&json!({"slug": format!("cb-{}", uuid::Uuid::new_v4()), "title": "CB"}))
+        .set_json(json!({"slug": format!("cb-{}", uuid::Uuid::new_v4()), "title": "CB"}))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
     let board: Board = serde_json::from_slice(&test::read_body(resp).await).unwrap();
 
@@ -125,21 +133,27 @@ async fn test_created_by_persists_username_for_thread_and_reply() {
     let req = test::TestRequest::post()
         .uri("/api/v1/threads")
         .insert_header(("Authorization", format!("Bearer {}", user_jwt)))
-        .set_json(&json!({"board_id": board.id, "subject": "Hello", "body": "Body"}))
+        .set_json(json!({"board_id": board.id, "subject": "Hello", "body": "Body"}))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
-    let thread: Thread = serde_json::from_slice(&test::read_body(resp).await).unwrap();
+    let body = test::read_body(resp).await;
+    let public_thread: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(public_thread.get("created_by").is_none());
+    let thread: Thread = serde_json::from_slice(&body).unwrap();
 
     // Create reply as alice
     let req = test::TestRequest::post()
         .uri("/api/v1/replies")
         .insert_header(("Authorization", format!("Bearer {}", user_jwt)))
-        .set_json(&json!({"thread_id": thread.id, "content": "Hi"}))
+        .set_json(json!({"thread_id": thread.id, "content": "Hi"}))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
-    let reply: Reply = serde_json::from_slice(&test::read_body(resp).await).unwrap();
+    let body = test::read_body(resp).await;
+    let public_reply: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(public_reply.get("created_by").is_none());
+    let reply: Reply = serde_json::from_slice(&body).unwrap();
 
     // Validate created_by (not exposed via JSON) directly via SQL
     let th_created_by = fetch_thread_created_by(&pool, thread.id)
@@ -148,6 +162,8 @@ async fn test_created_by_persists_username_for_thread_and_reply() {
     let rp_created_by = fetch_reply_created_by(&pool, reply.id)
         .await
         .expect("reply created_by");
-    assert_eq!(th_created_by, uname);
-    assert_eq!(rp_created_by, uname);
+    assert_eq!(th_created_by["subject"], format!("discord:{uname}"));
+    assert_eq!(th_created_by["username"], uname);
+    assert_eq!(rp_created_by["subject"], format!("discord:{uname}"));
+    assert_eq!(rp_created_by["username"], uname);
 }

@@ -28,4 +28,11 @@ patches:
         value: 1
       - op: replace
         path: /spec/maxReplicas
-        value: 3
+        value: 1
+  - target:
+      kind: ConfigMap
+      name: rib-config
+    patch: |-
+      - op: replace
+        path: /data/S3_ENDPOINT
+        value: http://minio-dev:9000

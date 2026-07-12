@@ -2,6 +2,8 @@
 
 React migration scaffold for rib.
 
+Requires Node.js 20 or newer.
+
 ## Scripts
 
 - dev: Run Vite dev server

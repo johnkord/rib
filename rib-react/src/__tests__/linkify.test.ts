@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { linkifyText, containsUrls, containsVideoUrls } from '../lib/linkify';
-import { createElement } from 'react';
 
 describe('linkifyText', () => {
   it('should return original text when no URLs are present', () => {
@@ -123,7 +122,7 @@ describe('linkifyText', () => {
 
   it('should handle empty or null text', () => {
     expect(linkifyText('')).toEqual([]);
-    expect(linkifyText(null as any)).toEqual([]);
+    expect(linkifyText(null as unknown as string)).toEqual([]);
   });
 
   it('should preserve case in URLs', () => {

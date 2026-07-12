@@ -1,13 +1,29 @@
 name: Deploy to AKS
 
 on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      backup_reference:
+        description: "Verified off-cluster PostgreSQL and object backup reference"
+        required: true
+        type: string
+      acknowledge_downtime:
+        description: "I accept a maintenance window while the one-replica Deployment is recreated"
+        required: true
+        type: boolean
+      acknowledge_no_old_binary_rollback:
+        description: "I understand migration 20260711000006 requires fix-forward or database restore, not an old-image rollback"
+        required: true
+        type: boolean
 
 permissions:
+  actions: read
   contents: read
-  id-token: write            # added for OIDC flow
+  id-token: write # added for OIDC flow
+
+concurrency:
+  group: rib-production
+  cancel-in-progress: false
 
 env:
   ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
@@ -25,13 +41,43 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    environment: prod  # Use the 'prod' environment for protection rules
+    environment: prod # Use the 'prod' environment for protection rules
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
 
       - name: Set SHORT_SHA
-        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
+          BACKUP_REFERENCE: ${{ inputs.backup_reference }}
+          ACKNOWLEDGE_DOWNTIME: ${{ inputs.acknowledge_downtime }}
+          ACKNOWLEDGE_NO_OLD_BINARY_ROLLBACK: ${{ inputs.acknowledge_no_old_binary_rollback }}
+        run: |
+          set -euo pipefail
+          test -n "${BACKUP_REFERENCE//[[:space:]]/}"
+          test "$ACKNOWLEDGE_DOWNTIME" = "true"
+          test "$ACKNOWLEDGE_NO_OLD_BINARY_ROLLBACK" = "true"
+          git fetch origin main
+          test "$DEPLOY_SHA" = "$(git rev-parse origin/main)"
+          echo "SHORT_SHA=${DEPLOY_SHA::7}" >> "$GITHUB_ENV"
+          echo "DEPLOY_SHA=$DEPLOY_SHA" >> "$GITHUB_ENV"
+          echo "backup_reference=$BACKUP_REFERENCE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify exact commit passed CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          successful_runs=$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow ci.yml \
+            --commit "$DEPLOY_SHA" \
+            --limit 20 \
+            --json status,conclusion \
+            --jq '[.[] | select(.status == "completed" and .conclusion == "success")] | length')
+          test "$successful_runs" -ge 1
 
       # Build frontend FIRST so embedded-frontend exists for Rust compilation
       - name: Setup Node
@@ -57,7 +103,7 @@ jobs:
 
       # Build & push image
       - name: Build Docker image
-        run: docker build -t $ACR_LOGIN_SERVER/rib:$SHORT_SHA .
+        run: docker build -t "$ACR_LOGIN_SERVER/rib:$SHORT_SHA" .
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -65,13 +111,13 @@ jobs:
           client-id: ${{ env.AZURE_CLIENT_ID }}
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
-          allow-no-subscriptions: true   # optional; keeps action happy if scope limited
+          allow-no-subscriptions: true # optional; keeps action happy if scope limited
 
       - name: Login to ACR
-        run: az acr login --name $ACR_NAME
+        run: az acr login --name "$ACR_NAME"
 
       - name: Push image
-        run: docker push $ACR_LOGIN_SERVER/rib:$SHORT_SHA
+        run: docker push "$ACR_LOGIN_SERVER/rib:$SHORT_SHA"
 
       # Deploy
       - name: Set AKS context
@@ -102,6 +148,7 @@ jobs:
           }
           # Required secrets (fail fast if any missing)
           JWT_SECRET=$(fetch rib-JWT-SECRET)
+          TRIPCODE_SECRET=$(fetch rib-TRIPCODE-SECRET)
           DATABASE_URL=$(fetch rib-DATABASE-URL)
           S3_ACCESS_KEY=$(fetch rib-S3-ACCESS-KEY)
           S3_SECRET_KEY=$(fetch rib-S3-SECRET-KEY)
@@ -117,7 +164,7 @@ jobs:
           if az keyvault secret show --vault-name "$KV" --name rib-REDIS-URL >/dev/null 2>&1; then
             REDIS_URL=$(fetch rib-REDIS-URL)
           else
-            REDIS_URL="redis://redis:6379"  # fallback (non-secret default)
+            REDIS_URL="redis://redis-aks:6379"  # fallback (non-secret default)
           fi
           if az keyvault secret show --vault-name "$KV" --name rib-REDIS-PASSWORD >/dev/null 2>&1; then
             REDIS_PASSWORD=$(fetch rib-REDIS-PASSWORD)
@@ -125,32 +172,96 @@ jobs:
             REDIS_PASSWORD=""  # empty if auth disabled
           fi
           # Build secret manifest (atomic apply). Using --dry-run to avoid logging secret values outside the encoded yaml.
-          kubectl -n rib create secret generic rib-secrets \
-            --from-literal=JWT_SECRET="$JWT_SECRET" \
-            --from-literal=DATABASE_URL="$DATABASE_URL" \
-            --from-literal=REDIS_URL="$REDIS_URL" \
-            --from-literal=S3_ACCESS_KEY="$S3_ACCESS_KEY" \
-            --from-literal=S3_SECRET_KEY="$S3_SECRET_KEY" \
-            --from-literal=DISCORD_CLIENT_ID="$DISCORD_CLIENT_ID" \
-            --from-literal=DISCORD_CLIENT_SECRET="$DISCORD_CLIENT_SECRET" \
-            --from-literal=DISCORD_REDIRECT_URI="$DISCORD_REDIRECT_URI" \
-            $( [ -n "$REDIS_PASSWORD" ] && printf -- "--from-literal=REDIS_PASSWORD=%s" "$REDIS_PASSWORD" || true ) \
+          secret_args=(
+            --from-literal=JWT_SECRET="$JWT_SECRET"
+            --from-literal=TRIPCODE_SECRET="$TRIPCODE_SECRET"
+            --from-literal=DATABASE_URL="$DATABASE_URL"
+            --from-literal=REDIS_URL="$REDIS_URL"
+            --from-literal=S3_ACCESS_KEY="$S3_ACCESS_KEY"
+            --from-literal=S3_SECRET_KEY="$S3_SECRET_KEY"
+            --from-literal=DISCORD_CLIENT_ID="$DISCORD_CLIENT_ID"
+            --from-literal=DISCORD_CLIENT_SECRET="$DISCORD_CLIENT_SECRET"
+            --from-literal=DISCORD_REDIRECT_URI="$DISCORD_REDIRECT_URI"
+          )
+          if [[ -n "$REDIS_PASSWORD" ]]; then
+            secret_args+=(--from-literal=REDIS_PASSWORD="$REDIS_PASSWORD")
+          fi
+          kubectl -n rib create secret generic rib-secrets "${secret_args[@]}" \
             --dry-run=client -o yaml | kubectl apply -f -
           echo "secret_sync=updated" >> "$GITHUB_OUTPUT"
 
-      - name: Install kustomize
+      - name: Preflight pending migration data
         run: |
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-          sudo mv kustomize /usr/local/bin/
+          set -euo pipefail
+          cleanup() {
+            kubectl -n rib delete job rib-migration-preflight --ignore-not-found >/dev/null
+          }
+          trap cleanup EXIT
+          cleanup
+          cat <<'YAML' | kubectl apply -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: rib-migration-preflight
+            namespace: rib
+          spec:
+            backoffLimit: 0
+            ttlSecondsAfterFinished: 300
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: postgres
+                    image: postgres:16-alpine
+                    envFrom:
+                      - secretRef:
+                          name: rib-secrets
+                    command: ["sh", "-ec"]
+                    args:
+                      - |
+                        psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+                        DO $$
+                        BEGIN
+                          IF EXISTS (SELECT 1 FROM images WHERE (thread_id IS NULL) = (reply_id IS NULL)) THEN
+                            RAISE EXCEPTION 'images must have exactly one owner';
+                          END IF;
+                          IF EXISTS (SELECT 1 FROM images WHERE hash !~ '^[0-9a-f]{64}$') THEN
+                            RAISE EXCEPTION 'invalid image hash';
+                          END IF;
+                          IF EXISTS (SELECT 1 FROM images WHERE thread_id IS NOT NULL GROUP BY thread_id HAVING count(*) > 1) THEN
+                            RAISE EXCEPTION 'multiple images reference one thread';
+                          END IF;
+                          IF EXISTS (SELECT 1 FROM images WHERE reply_id IS NOT NULL GROUP BY reply_id HAVING count(*) > 1) THEN
+                            RAISE EXCEPTION 'multiple images reference one reply';
+                          END IF;
+                          IF EXISTS (SELECT 1 FROM boards WHERE slug !~ '^[a-z0-9_-]{1,64}$' OR char_length(title) NOT BETWEEN 1 AND 100) THEN
+                            RAISE EXCEPTION 'invalid board fields';
+                          END IF;
+                          IF EXISTS (SELECT 1 FROM threads WHERE char_length(subject) NOT BETWEEN 1 AND 200 OR char_length(body) > 2000) THEN
+                            RAISE EXCEPTION 'invalid thread fields';
+                          END IF;
+                          IF EXISTS (SELECT 1 FROM replies WHERE char_length(content) > 2000) THEN
+                            RAISE EXCEPTION 'invalid reply fields';
+                          END IF;
+                        END $$;
+                        SQL
+          YAML
+          kubectl -n rib wait --for=condition=complete job/rib-migration-preflight --timeout=120s || {
+            kubectl -n rib logs job/rib-migration-preflight
+            exit 1
+          }
+          kubectl -n rib logs job/rib-migration-preflight
 
       - name: Deploy with Kustomize
         run: |
-          cd k8s/overlays/aks
-          # Update the image reference (base already uses ACR registry)
-          # Using git short SHA tag ensures a new image pull (tag immutability assumption)
-          kustomize edit set image $ACR_LOGIN_SERVER/rib=$ACR_LOGIN_SERVER/rib:$SHORT_SHA
-          # APPLY (not dry-run) so new pods are created. The previous version incorrectly used --dry-run=client.
-          kustomize build . | kubectl apply -f -
+          set -euo pipefail
+          manifest=/tmp/rib-aks.yaml
+          kubectl kustomize k8s/overlays/aks > "$manifest"
+          image_lines=$(grep -Ec '^[[:space:]]+image: .*/rib:[^[:space:]]+$' "$manifest")
+          test "$image_lines" -eq 1
+          sed -Ei "s#^([[:space:]]+image: ).*/rib:[^[:space:]]+$#\1$ACR_LOGIN_SERVER/rib:$SHORT_SHA#" "$manifest"
+          grep -F "image: $ACR_LOGIN_SERVER/rib:$SHORT_SHA" "$manifest"
+          kubectl apply -f "$manifest"
           # Quick visibility of the resulting deployment spec & image
           kubectl -n rib get deploy rib-backend-aks -o wide
           kubectl -n rib describe deploy rib-backend-aks | grep -i Image:
@@ -163,6 +274,9 @@ jobs:
       - name: Smoke test
         if: success()
         run: |
-          sleep 10  # Allow ingress to update
-          curl -f https://rib.curlyquote.com/healthz || exit 1
+          curl --fail --show-error --silent \
+            --retry 12 --retry-delay 5 --retry-connrefused \
+            https://rib.curlyquote.com/healthz >/dev/null
+          test "$(curl --fail --show-error --silent https://rib.curlyquote.com/api/v1/auth/me)" = "null"
+          test "$(kubectl -n rib exec postgres-aks-0 -- psql -U postgres -d rib -Atc 'select count(*) from _sqlx_migrations')" = "10"
           kubectl -n rib get pods -l app=rib-backend -o wide

@@ -2,6 +2,7 @@ use actix_web::{test, App};
 use rib::auth::{create_jwt, Role};
 use rib::models::{Board, Reply, Thread};
 use rib::repo::pg::PgRepo;
+use rib::repo::RoleRepo;
 use rib::storage::{ImageStore, ImageStoreError};
 use rib::{config, AppState};
 use serde_json::json;
@@ -33,15 +34,19 @@ impl ImageStore for MockImageStore {
         Ok(())
     }
 }
-async fn pg_repo() -> Option<PgRepo> {
-    let url = std::env::var("DATABASE_URL").ok()?;
+async fn pg_repo() -> PgRepo {
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL required for integration tests");
     let pool = PgPoolOptions::new()
         .max_connections(1)
         .acquire_timeout(std::time::Duration::from_secs(5))
         .connect(&url)
         .await
-        .ok()?;
-    Some(PgRepo::new(pool))
+        .expect("connect test database");
+    let repo = PgRepo::new(pool);
+    repo.set_subject_role("discord:user", Role::User)
+        .await
+        .expect("allowlist test user");
+    repo
 }
 fn ensure_secret() {
     if std::env::var("JWT_SECRET").is_err() {
@@ -69,16 +74,13 @@ fn uniq(prefix: &str) -> String {
 #[actix_web::test]
 #[serial_test::serial]
 async fn test_board_soft_delete_and_restore() {
-    let Some(repo) = pg_repo().await else {
-        eprintln!("skip: no DATABASE_URL");
-        return;
-    };
+    let repo = pg_repo().await;
     let app_state = AppState {
         repo: Arc::new(repo),
         image_store: Arc::new(MockImageStore::default()),
         rate_limiter: None,
     };
-    let mut app = test::init_service(
+    let app = test::init_service(
         App::new()
             .app_data(actix_web::web::Data::new(app_state))
             .configure(config),
@@ -92,9 +94,9 @@ async fn test_board_soft_delete_and_restore() {
     let req = test::TestRequest::post()
         .uri("/api/v1/boards")
         .insert_header(("Authorization", format!("Bearer {admin}")))
-        .set_json(&json!({"slug":slug,"title":"Temp"}))
+        .set_json(json!({"slug":slug,"title":"Temp"}))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
     let board: Board = serde_json::from_slice(&test::read_body(resp).await).unwrap();
 
@@ -103,7 +105,7 @@ async fn test_board_soft_delete_and_restore() {
         .uri("/api/v1/boards")
         .insert_header(("Authorization", format!("Bearer {user}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert!(resp.status().is_success());
     let boards: Vec<Board> = serde_json::from_slice(&test::read_body(resp).await).unwrap();
     assert!(boards.iter().any(|b| b.id == board.id));
@@ -113,7 +115,7 @@ async fn test_board_soft_delete_and_restore() {
         .uri(&format!("/api/v1/admin/boards/{}/soft-delete", board.id))
         .insert_header(("Authorization", format!("Bearer {admin}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     // user list should hide
@@ -121,7 +123,7 @@ async fn test_board_soft_delete_and_restore() {
         .uri("/api/v1/boards")
         .insert_header(("Authorization", format!("Bearer {user}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     let boards: Vec<Board> = serde_json::from_slice(&test::read_body(resp).await).unwrap();
     assert!(!boards.iter().any(|b| b.id == board.id));
 
@@ -130,7 +132,7 @@ async fn test_board_soft_delete_and_restore() {
         .uri("/api/v1/boards?include_deleted=1")
         .insert_header(("Authorization", format!("Bearer {admin}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     let boards: Vec<Board> = serde_json::from_slice(&test::read_body(resp).await).unwrap();
     assert!(boards
         .iter()
@@ -144,7 +146,7 @@ async fn test_board_soft_delete_and_restore() {
         .uri(&format!("/api/v1/admin/boards/{}/restore", board.id))
         .insert_header(("Authorization", format!("Bearer {admin}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     // user sees again
@@ -152,7 +154,7 @@ async fn test_board_soft_delete_and_restore() {
         .uri("/api/v1/boards")
         .insert_header(("Authorization", format!("Bearer {user}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     let boards: Vec<Board> = serde_json::from_slice(&test::read_body(resp).await).unwrap();
     assert!(boards.iter().any(|b| b.id == board.id));
 }
@@ -161,16 +163,13 @@ async fn test_board_soft_delete_and_restore() {
 #[actix_web::test]
 #[serial_test::serial]
 async fn test_thread_soft_then_hard_delete() {
-    let Some(repo) = pg_repo().await else {
-        eprintln!("skip: no DATABASE_URL");
-        return;
-    };
+    let repo = pg_repo().await;
     let app_state = AppState {
         repo: Arc::new(repo),
         image_store: Arc::new(MockImageStore::default()),
         rate_limiter: None,
     };
-    let mut app = test::init_service(
+    let app = test::init_service(
         App::new()
             .app_data(actix_web::web::Data::new(app_state))
             .configure(config),
@@ -183,18 +182,18 @@ async fn test_thread_soft_then_hard_delete() {
     let req = test::TestRequest::post()
         .uri("/api/v1/boards")
         .insert_header(("Authorization", format!("Bearer {admin}")))
-        .set_json(&json!({"slug":uniq("tb-"),"title":"ThreadBoard"}))
+        .set_json(json!({"slug":uniq("tb-"),"title":"ThreadBoard"}))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     let board: Board = serde_json::from_slice(&test::read_body(resp).await).unwrap();
 
     // thread by user
     let req = test::TestRequest::post()
         .uri("/api/v1/threads")
         .insert_header(("Authorization", format!("Bearer {user}")))
-        .set_json(&json!({"board_id":board.id,"subject":"S","body":"B"}))
+        .set_json(json!({"board_id":board.id,"subject":"S","body":"B"}))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
     let thread: Thread = serde_json::from_slice(&test::read_body(resp).await).unwrap();
 
@@ -203,7 +202,7 @@ async fn test_thread_soft_then_hard_delete() {
         .uri(&format!("/api/v1/admin/threads/{}/soft-delete", thread.id))
         .insert_header(("Authorization", format!("Bearer {admin}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     // user fetch -> 404
@@ -211,7 +210,7 @@ async fn test_thread_soft_then_hard_delete() {
         .uri(&format!("/api/v1/threads/{}", thread.id))
         .insert_header(("Authorization", format!("Bearer {user}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
 
     // admin include_deleted -> 200 + deleted_at
@@ -219,7 +218,7 @@ async fn test_thread_soft_then_hard_delete() {
         .uri(&format!("/api/v1/threads/{}?include_deleted=1", thread.id))
         .insert_header(("Authorization", format!("Bearer {admin}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let t: Thread = serde_json::from_slice(&test::read_body(resp).await).unwrap();
     assert!(t.deleted_at.is_some());
@@ -229,7 +228,7 @@ async fn test_thread_soft_then_hard_delete() {
         .uri(&format!("/api/v1/admin/threads/{}", thread.id))
         .insert_header(("Authorization", format!("Bearer {admin}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 204);
 
     // admin fetch include_deleted -> 404
@@ -237,7 +236,7 @@ async fn test_thread_soft_then_hard_delete() {
         .uri(&format!("/api/v1/threads/{}?include_deleted=1", thread.id))
         .insert_header(("Authorization", format!("Bearer {admin}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
 }
 
@@ -245,16 +244,13 @@ async fn test_thread_soft_then_hard_delete() {
 #[actix_web::test]
 #[serial_test::serial]
 async fn test_reply_soft_delete_visibility() {
-    let Some(repo) = pg_repo().await else {
-        eprintln!("skip: no DATABASE_URL");
-        return;
-    };
+    let repo = pg_repo().await;
     let app_state = AppState {
         repo: Arc::new(repo),
         image_store: Arc::new(MockImageStore::default()),
         rate_limiter: None,
     };
-    let mut app = test::init_service(
+    let app = test::init_service(
         App::new()
             .app_data(actix_web::web::Data::new(app_state))
             .configure(config),
@@ -267,27 +263,27 @@ async fn test_reply_soft_delete_visibility() {
     let req = test::TestRequest::post()
         .uri("/api/v1/boards")
         .insert_header(("Authorization", format!("Bearer {admin}")))
-        .set_json(&json!({"slug":uniq("rb-"),"title":"ReplyBoard"}))
+        .set_json(json!({"slug":uniq("rb-"),"title":"ReplyBoard"}))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     let board: Board = serde_json::from_slice(&test::read_body(resp).await).unwrap();
 
     // thread
     let req = test::TestRequest::post()
         .uri("/api/v1/threads")
         .insert_header(("Authorization", format!("Bearer {user}")))
-        .set_json(&json!({"board_id":board.id,"subject":"S","body":"B"}))
+        .set_json(json!({"board_id":board.id,"subject":"S","body":"B"}))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     let thread: Thread = serde_json::from_slice(&test::read_body(resp).await).unwrap();
 
     // reply
     let req = test::TestRequest::post()
         .uri("/api/v1/replies")
         .insert_header(("Authorization", format!("Bearer {user}")))
-        .set_json(&json!({"thread_id":thread.id,"content":"Hi"}))
+        .set_json(json!({"thread_id":thread.id,"content":"Hi"}))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     let reply: Reply = serde_json::from_slice(&test::read_body(resp).await).unwrap();
 
     // soft delete reply
@@ -295,7 +291,7 @@ async fn test_reply_soft_delete_visibility() {
         .uri(&format!("/api/v1/admin/replies/{}/soft-delete", reply.id))
         .insert_header(("Authorization", format!("Bearer {admin}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     // user list replies -> not present
@@ -303,7 +299,7 @@ async fn test_reply_soft_delete_visibility() {
         .uri(&format!("/api/v1/threads/{}/replies", thread.id))
         .insert_header(("Authorization", format!("Bearer {user}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     let replies: Vec<Reply> = serde_json::from_slice(&test::read_body(resp).await).unwrap();
     assert!(replies.iter().all(|r| r.id != reply.id));
 
@@ -315,7 +311,7 @@ async fn test_reply_soft_delete_visibility() {
         ))
         .insert_header(("Authorization", format!("Bearer {admin}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     let replies: Vec<Reply> = serde_json::from_slice(&test::read_body(resp).await).unwrap();
     assert!(replies
         .iter()
@@ -329,16 +325,13 @@ async fn test_reply_soft_delete_visibility() {
 #[actix_web::test]
 #[serial_test::serial]
 async fn test_create_thread_blocked_by_soft_deleted_board() {
-    let Some(repo) = pg_repo().await else {
-        eprintln!("skip: no DATABASE_URL");
-        return;
-    };
+    let repo = pg_repo().await;
     let app_state = AppState {
         repo: Arc::new(repo),
         image_store: Arc::new(MockImageStore::default()),
         rate_limiter: None,
     };
-    let mut app = test::init_service(
+    let app = test::init_service(
         App::new()
             .app_data(actix_web::web::Data::new(app_state))
             .configure(config),
@@ -350,24 +343,24 @@ async fn test_create_thread_blocked_by_soft_deleted_board() {
     let req = test::TestRequest::post()
         .uri("/api/v1/boards")
         .insert_header(("Authorization", format!("Bearer {admin}")))
-        .set_json(&json!({"slug":uniq("sb-"),"title":"SoftBoard"}))
+        .set_json(json!({"slug":uniq("sb-"),"title":"SoftBoard"}))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     let board: Board = serde_json::from_slice(&test::read_body(resp).await).unwrap();
     // soft delete board
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/admin/boards/{}/soft-delete", board.id))
         .insert_header(("Authorization", format!("Bearer {admin}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     // attempt thread creation
     let req = test::TestRequest::post()
         .uri("/api/v1/threads")
         .insert_header(("Authorization", format!("Bearer {user}")))
-        .set_json(&json!({"board_id":board.id,"subject":"S","body":"B"}))
+        .set_json(json!({"board_id":board.id,"subject":"S","body":"B"}))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
 }
 
@@ -375,16 +368,13 @@ async fn test_create_thread_blocked_by_soft_deleted_board() {
 #[actix_web::test]
 #[serial_test::serial]
 async fn test_soft_delete_idempotent() {
-    let Some(repo) = pg_repo().await else {
-        eprintln!("skip: no DATABASE_URL");
-        return;
-    };
+    let repo = pg_repo().await;
     let app_state = AppState {
         repo: Arc::new(repo),
         image_store: Arc::new(MockImageStore::default()),
         rate_limiter: None,
     };
-    let mut app = test::init_service(
+    let app = test::init_service(
         App::new()
             .app_data(actix_web::web::Data::new(app_state))
             .configure(config),
@@ -395,21 +385,21 @@ async fn test_soft_delete_idempotent() {
     let req = test::TestRequest::post()
         .uri("/api/v1/boards")
         .insert_header(("Authorization", format!("Bearer {admin}")))
-        .set_json(&json!({"slug":uniq("idem-"),"title":"Idem"}))
+        .set_json(json!({"slug":uniq("idem-"),"title":"Idem"}))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     let board: Board = serde_json::from_slice(&test::read_body(resp).await).unwrap();
     // first soft delete
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/admin/boards/{}/soft-delete", board.id))
         .insert_header(("Authorization", format!("Bearer {admin}")))
         .to_request();
-    let _ = test::call_service(&mut app, req).await;
+    let _ = test::call_service(&app, req).await;
     let req = test::TestRequest::get()
         .uri("/api/v1/boards?include_deleted=1")
         .insert_header(("Authorization", format!("Bearer {admin}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     let boards: Vec<Board> = serde_json::from_slice(&test::read_body(resp).await).unwrap();
     let first_ts = boards.iter().find(|b| b.id == board.id).unwrap().deleted_at;
     assert!(first_ts.is_some());
@@ -418,13 +408,73 @@ async fn test_soft_delete_idempotent() {
         .uri(&format!("/api/v1/admin/boards/{}/soft-delete", board.id))
         .insert_header(("Authorization", format!("Bearer {admin}")))
         .to_request();
-    let _ = test::call_service(&mut app, req).await;
+    let _ = test::call_service(&app, req).await;
     let req = test::TestRequest::get()
         .uri("/api/v1/boards?include_deleted=1")
         .insert_header(("Authorization", format!("Bearer {admin}")))
         .to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
     let boards: Vec<Board> = serde_json::from_slice(&test::read_body(resp).await).unwrap();
     let second_ts = boards.iter().find(|b| b.id == board.id).unwrap().deleted_at;
     assert_eq!(first_ts, second_ts);
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn soft_deleted_board_hides_threads_by_direct_id() {
+    let repo = pg_repo().await;
+    let app = test::init_service(
+        App::new()
+            .app_data(actix_web::web::Data::new(AppState {
+                repo: Arc::new(repo),
+                image_store: Arc::new(MockImageStore::default()),
+                rate_limiter: None,
+            }))
+            .configure(config),
+    )
+    .await;
+    let admin = admin_token();
+    let user = user_token();
+
+    let request = test::TestRequest::post()
+        .uri("/api/v1/boards")
+        .insert_header(("Authorization", format!("Bearer {admin}")))
+        .set_json(json!({"slug": uniq("hidden-"), "title": "Hidden"}))
+        .to_request();
+    let response = test::call_service(&app, request).await;
+    assert_eq!(response.status(), 201);
+    let board: Board = serde_json::from_slice(&test::read_body(response).await).unwrap();
+
+    let request = test::TestRequest::post()
+        .uri("/api/v1/threads")
+        .insert_header(("Authorization", format!("Bearer {user}")))
+        .set_json(json!({"board_id": board.id, "subject": "Hidden", "body": "Body"}))
+        .to_request();
+    let response = test::call_service(&app, request).await;
+    assert_eq!(response.status(), 201);
+    let thread: Thread = serde_json::from_slice(&test::read_body(response).await).unwrap();
+
+    let request = test::TestRequest::post()
+        .uri(&format!("/api/v1/admin/boards/{}/soft-delete", board.id))
+        .insert_header(("Authorization", format!("Bearer {admin}")))
+        .to_request();
+    assert_eq!(test::call_service(&app, request).await.status(), 200);
+
+    let request = test::TestRequest::get()
+        .uri(&format!("/api/v1/threads/{}", thread.id))
+        .insert_header(("Authorization", format!("Bearer {user}")))
+        .to_request();
+    assert_eq!(test::call_service(&app, request).await.status(), 404);
+
+    let request = test::TestRequest::get()
+        .uri(&format!("/api/v1/threads/{}/replies", thread.id))
+        .insert_header(("Authorization", format!("Bearer {user}")))
+        .to_request();
+    assert_eq!(test::call_service(&app, request).await.status(), 404);
+
+    let request = test::TestRequest::get()
+        .uri(&format!("/api/v1/threads/{}?include_deleted=1", thread.id))
+        .insert_header(("Authorization", format!("Bearer {admin}")))
+        .to_request();
+    assert_eq!(test::call_service(&app, request).await.status(), 200);
 }

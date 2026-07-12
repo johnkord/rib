@@ -27,9 +27,8 @@ export function About() {
             <p className="font-medium">Authentication methods:</p>
             <ul className="list-disc list-inside space-y-1">
               <li>
-                <span className="font-semibold">Discord Role:</span> A Discord ID can be manually
-                granted a role by the operator. Once assigned, the user can create threads and
-                upload content.
+                <span className="font-semibold">Discord Allowlist:</span> A Discord ID must be
+                approved by the operator before it can post.
               </li>
               <li>
                 <span className="font-semibold">Bitcoin Proof:</span> Prove ownership of a Bitcoin
@@ -41,6 +40,11 @@ export function About() {
             <p>
               No passwords are stored by rib; access derives from external proofs (Discord OAuth) or
               cryptographic ownership of a qualifying Bitcoin address.
+            </p>
+            <p>
+              Posts are pseudoanonymous to readers. Moderators can privately identify and ban an
+              abusive posting identity. Posters may optionally use a password-derived tripcode to
+              make their own posts publicly recognizable; the password is never stored.
             </p>
             <hr className="my-2" />
             <p>

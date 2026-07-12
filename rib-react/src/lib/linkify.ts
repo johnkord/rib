@@ -31,7 +31,7 @@ const makeVideoToggle = (videoMaxWidthClass?: string) => {
         'data-type': 'video-toggle',
         'data-video-type': embed.type,
         'data-original-url': originalUrl,
-      } as any,
+      },
       [
         React.createElement(
           'a',

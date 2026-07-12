@@ -23,6 +23,10 @@ metadata:
 spec:
   replicas: 1
   revisionHistoryLimit: 2
+  # Migration 20260711000006 removes a uniqueness contract required by older
+  # binaries. Do not overlap old and new pods during this pre-1.0 rollout.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: rib-backend
@@ -86,7 +90,9 @@ spec:
     kind: Deployment
     name: rib-backend
   minReplicas: 1
-  maxReplicas: 10
+  # Bitcoin challenges and business rate limits are process-local today.
+  # Keep one replica until those stores move to Redis or another shared backend.
+  maxReplicas: 1
   metrics:
     - type: Resource
       resource:

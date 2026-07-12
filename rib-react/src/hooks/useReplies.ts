@@ -7,6 +7,8 @@ export interface Reply {
   content: string;
   image_hash?: string; // ...unchanged...
   mime?: string; // ...unchanged...
+  author_name?: string | null;
+  tripcode?: string | null;
   created_at: string; // ISO timestamp
   deleted_at?: string | null;
   created_by: string; // author attribution
@@ -23,7 +25,13 @@ export function useReplies(threadId: number | null, includeDeleted: boolean) {
 
 export function useCreateReply() {
   const qc = useQueryClient();
-  return async (threadId: number, content: string, file?: File | null) => {
+  return async (
+    threadId: number,
+    content: string,
+    file?: File | null,
+    authorName?: string,
+    tripcodePassword?: string,
+  ) => {
     let image_hash: string | undefined;
     let mime: string | undefined;
 
@@ -33,7 +41,14 @@ export function useCreateReply() {
       mime = uploaded.mime;
     }
 
-    await postJson('/replies', { thread_id: threadId, content, image_hash, mime, created_by: '' });
+    await postJson('/replies', {
+      thread_id: threadId,
+      content,
+      image_hash,
+      mime,
+      author_name: authorName || undefined,
+      tripcode_password: tripcodePassword || undefined,
+    });
     await qc.invalidateQueries({ queryKey: ['replies', threadId] });
     await qc.invalidateQueries({ queryKey: ['thread', threadId] });
   };

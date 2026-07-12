@@ -62,8 +62,8 @@ export function createVideoEmbed(
   originalUrl: string,
   opts?: CreateVideoOptions,
 ): React.ReactElement {
-  let width = '560';
-  let height = embed.type === 'soundcloud' ? '166' : '315';
+  const width = '560';
+  const height = embed.type === 'soundcloud' ? '166' : '315';
   const commonProps = {
     width,
     height,
