@@ -1,0 +1,6 @@
+[advisories]
+# SQLx records its optional MySQL driver's RSA dependency in Cargo.lock even
+# though RIB disables SQLx defaults and enables PostgreSQL only. `cargo tree
+# --all-features --target all -i rsa` has no path, so this advisory is not in
+# any RIB build. Remove this exception if MySQL support is ever enabled.
+ignore = ["RUSTSEC-2023-0071"]

@@ -54,6 +54,10 @@ The workflow fails closed when CI is missing, required acknowledgements are fals
 
 The workflow deploys only the current `origin/main` tip. It will not deploy an older ancestor or an unmerged branch.
 
+## Dependency Audit Note
+
+`.cargo/audit.toml` ignores `RUSTSEC-2023-0071` only because SQLx records its optional MySQL driver's RSA dependency in `Cargo.lock` while RIB enables PostgreSQL only. `cargo tree --all-features --target all -i rsa` has no path. Remove the exception if MySQL support is ever enabled.
+
 ## Post-Deploy Verification
 
 Verify:
